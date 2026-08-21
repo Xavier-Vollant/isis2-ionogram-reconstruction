@@ -1,0 +1,30 @@
+{
+  "schema": "isis.model_candidates.v1",
+  "default_model": "norm_residual_unet",
+  "models": {
+    "contrast_aware_norm_residual": {
+      "label": "Contrast-aware Normalized Residual U-Net",
+      "checkpoint": "models/phase6_contrast_aware_norm_residual.pt",
+      "calibration": {
+        "scale": 1.0899729810684073,
+        "bias": -0.074107471210315
+      }
+    },
+    "norm_residual_unet": {
+      "label": "Normalized Residual U-Net",
+      "checkpoint": "models/phase6_norm_residual_unet.pt",
+      "calibration": {
+        "scale": 1.3051638903090539,
+        "bias": -0.09274767322644561
+      }
+    },
+    "hybrid_unet": {
+      "label": "Hybrid U-Net",
+      "checkpoint": "models/phase6_hybrid_unet.pt",
+      "calibration": {
+        "scale": 1.3178799015362854,
+        "bias": -0.06792946778821082
+      }
+    }
+  }
+}
