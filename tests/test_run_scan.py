@@ -1,9 +1,47 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from scripts.pipeline import run_scan
+
+
+def test_model_name_selects_registered_checkpoint(monkeypatch, tmp_path):
+    selected = tmp_path / "hybrid.pt"
+    custom = tmp_path / "custom.pt"
+    monkeypatch.setattr(run_scan, "candidate_checkpoint", lambda name: selected)
+
+    assert run_scan.resolve_checkpoint(custom, "hybrid_unet") == selected
+    assert run_scan.resolve_checkpoint(custom) == custom
+
+
+def test_rejected_scan_with_diagnostics_keeps_inspection_output(monkeypatch, tmp_path):
+    film = tmp_path / "scan.png"
+    profile = tmp_path / "profile.json"
+    output = tmp_path / "output"
+    film.write_bytes(b"film")
+    profile.write_text("{}")
+    calls = []
+
+    monkeypatch.setattr(
+        run_scan,
+        "standardize",
+        lambda path, loaded_profile, destination: {
+            "status": "not_usable",
+            "reason": "insufficient marker support",
+        },
+    )
+    monkeypatch.setattr(
+        run_scan,
+        "_write_diagnostics",
+        lambda path, destination, loaded_profile: calls.append(destination),
+    )
+
+    with pytest.raises(ValueError, match="insufficient marker support"):
+        run_scan.run_scan(film, output, profile_path=profile, diagnostics=True)
+
+    assert calls == [output / "diagnostics"]
 
 
 def test_run_scan_connects_the_three_product_stages(tmp_path, monkeypatch):

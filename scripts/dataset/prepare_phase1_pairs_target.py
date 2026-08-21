@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import csv
-import json
 import os
 import random
 from collections import Counter, defaultdict
@@ -96,7 +95,7 @@ def assign_splits(rows, existing_reel_splits, seed):
     return [split_by_reel[row["csa_film_subdir"]] for row in rows], split_by_reel
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--candidates",
@@ -124,13 +123,20 @@ def main():
         help="write only the newly selected pairs instead of copying the base set",
     )
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     if args.out.exists():
         raise SystemExit(f"destination already exists: {args.out}")
 
-    existing = read_csv(args.existing)
-    old_records = {row["name"]: row for row in read_csv(args.records)}
+    if args.fresh_only:
+        # A fresh checkout has no historical Phase 1 set to merge. Reusing
+        # those files remains supported for incremental batches.
+        existing = read_csv(args.existing) if args.existing.is_file() else []
+        old_record_rows = read_csv(args.records) if args.records.is_file() else []
+    else:
+        existing = read_csv(args.existing)
+        old_record_rows = read_csv(args.records)
+    old_records = {row["name"]: row for row in old_record_rows}
     existing_names = {row["pair_name"] for row in existing}
     existing_reel_splits = {row["reel"]: row["split"] for row in existing}
     used_names = set(existing_names)

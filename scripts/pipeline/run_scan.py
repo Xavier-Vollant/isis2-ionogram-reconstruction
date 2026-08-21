@@ -26,13 +26,23 @@ from scripts.pipeline.extract_scan_structure import (  # noqa: E402
 )
 from scripts.pipeline.fit_frequency_axis import fit_from_profile, load_json  # noqa: E402
 from scripts.pipeline.fit_height_axis import fit_from_profile as fit_height_from_profile  # noqa: E402
-from scripts.pipeline.infer_isis_model import infer  # noqa: E402
+from scripts.pipeline.infer_isis_model import (  # noqa: E402
+    candidate_checkpoint,
+    infer,
+    load_model_candidates,
+)
 from scripts.pipeline.standardize_film_only_512 import process as standardize  # noqa: E402
 from scripts.pipeline.warp_calibrated_scan import warp_one, write_figure  # noqa: E402
 
 
 DEFAULT_PROFILE = ROOT / "configs/film_calibration_profile.json"
-DEFAULT_CHECKPOINT = ROOT / "models/phase6_norm_residual_unet.pt"
+DEFAULT_MODEL = load_model_candidates()["default_model"]
+DEFAULT_CHECKPOINT = candidate_checkpoint(DEFAULT_MODEL)
+
+
+def resolve_checkpoint(checkpoint, model_name=None):
+    """Use a registered model when requested, otherwise keep the checkpoint."""
+    return candidate_checkpoint(model_name) if model_name else checkpoint
 
 
 def _write_diagnostics(film_path, output_dir, profile):
@@ -93,18 +103,34 @@ def run_scan(
     pair_name=None,
     station="",
     diagnostics=False,
+    model_name=None,
 ):
     film_path = Path(film_path)
     output_dir = Path(output_dir)
+    checkpoint = resolve_checkpoint(checkpoint, model_name)
     profile = load_json(profile_path)
     row = standardize(film_path, profile, output_dir)
     if row["status"] != "usable" or not row.get("artifact"):
-        raise ValueError(f"scan was not usable: {row.get('reason', row['status'])}")
+        reason = row.get("reason") or row["status"]
+        if diagnostics:
+            try:
+                _write_diagnostics(film_path, output_dir / "diagnostics", profile)
+            except Exception as error:
+                reason = f"{reason}; diagnostics failed: {error}"
+        raise ValueError(f"scan was not usable: {reason}")
 
     artifact = output_dir / row["artifact"]
     stem = film_path.stem
     prediction = output_dir / f"{stem}_prediction.npz"
-    infer(artifact, checkpoint, prediction)
+    try:
+        infer(artifact, checkpoint, prediction)
+    except ModuleNotFoundError as error:
+        if error.name == "torch":
+            raise RuntimeError(
+                "PyTorch is not installed in the active Python environment; "
+                "activate .venv and run `python -m pip install -e '.[dev,notebooks]'`"
+            ) from error
+        raise
 
     scan = ionogram.read_validated(artifact)
     name = pair_name or stem
@@ -139,13 +165,23 @@ def run_scan(
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("film", type=Path)
-    parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
-    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE)
-    parser.add_argument("--pair-name")
-    parser.add_argument("--station", default="")
-    parser.add_argument("--diagnostics", action="store_true")
+    parser.add_argument("film", type=Path, help="raw CSA PNG to process")
+    parser.add_argument("--output", type=Path, required=True, help="new directory for this run")
+    parser.add_argument(
+        "--model",
+        choices=tuple(load_model_candidates()["models"]),
+        help=f"registered model to use (default: {DEFAULT_MODEL})",
+    )
+    parser.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=DEFAULT_CHECKPOINT,
+        help="custom checkpoint; --model takes precedence when both are supplied",
+    )
+    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE, help="calibration profile JSON")
+    parser.add_argument("--pair-name", help="observation name for the exported CDF header")
+    parser.add_argument("--station", default="", help="CSA station code for the exported CDF header")
+    parser.add_argument("--diagnostics", action="store_true", help="write static inspection products")
     args = parser.parse_args(argv)
     summary = run_scan(
         args.film,
@@ -155,6 +191,7 @@ def main(argv=None):
         pair_name=args.pair_name,
         station=args.station,
         diagnostics=args.diagnostics,
+        model_name=args.model,
     )
     print(json.dumps(summary, indent=2), flush=True)
 

@@ -1,29 +1,34 @@
 # Notebooks
 
-Run these from the repository root after installing the project and notebook
-dependencies:
+The notebooks are visual companions to the command-line pipeline. Install the
+project and open Jupyter from the repository root:
 
 ```sh
 python -m pip install -e '.[dev,notebooks]'
+python -m jupyter lab
 ```
 
-1. `01_end_to_end_pipeline.ipynb` follows one raw CSA scan through the
-   calibrated image artifact.
-2. `02_structure_and_calibration.ipynb` focuses on boundaries, markers,
-   rulings, physical axes, and diagnostic figures.
-3. `03_reconstruction_and_cdf.ipynb` starts from a calibrated artifact and
-   shows all three historical finalist predictions and CDF-like exports.
+Run them in this order:
 
-Four small raw CSA PNG examples are included in `data/raw/`. The notebooks
-use the verified usable example `csa_verified_ksh_1972322002235.png` by
-default. Notebook 03 compares its generated CDF with the matching reference
-at `data/samples/i2_av_ksh_1972322002235_v01.cdf`.
+| Notebook | Use it for | Main result |
+|---|---|---|
+| `01_end_to_end_pipeline.ipynb` | Follow the verified CSA scan through loading, structure detection, calibration, and warping | calibrated `isis.ionogram.v1` artifact |
+| `02_structure_and_calibration.ipynb` | Investigate boundaries, marker candidates, ruling lines, and physical axes when a scan looks wrong | inspection figures and calibration records |
+| `03_reconstruction_and_cdf.ipynb` | Run the three registered finalist models and compare their CDF-like exports with the reference | prediction figures and structural CDF comparison |
 
-Notebook 03 uses `configs/model_candidates.json`, including the saved
-training-only contrast calibration for each finalist, so its outputs match
-the calibrated comparison that was previously shown by the local viewer.
+The notebooks use the included verified pair by default:
 
-The notebooks call the functions used by the command-line scripts. They are
-intended to explain and inspect the pipeline, not to contain a second copy of
-the processing algorithms. For a non-interactive one-scan run, use
-`scripts/pipeline/run_scan.py`.
+- CSA: `data/raw/csa_verified_ksh_1972322002235.png`
+- NASA reference: `data/samples/i2_av_ksh_1972322002235_v01.cdf`
+
+Notebook 03 compares structure and shared variables. Its predicted amplitudes
+are not expected to equal the measured NASA amplitudes.
+
+The notebooks call the same functions as the scripts; they do not contain a
+second implementation of the pipeline. For a non-interactive run, use
+[`scripts/pipeline/run_scan.py`](../scripts/pipeline/run_scan.py) as described
+in [`docs/GETTING_STARTED.md`](../docs/GETTING_STARTED.md).
+
+If a figure window cannot open, static figures are still written by the
+notebooks and diagnostics. See [`docs/TROUBLESHOOTING.md`](../docs/TROUBLESHOOTING.md)
+for the `FigureCanvasAgg` warning.
