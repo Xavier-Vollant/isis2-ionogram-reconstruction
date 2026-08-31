@@ -1,11 +1,10 @@
 # Getting started
 
-This is the shortest useful path through the project: install it, run the
-included verified scan, and inspect the files it creates.
+Install the project, run the included scan, and inspect the result.
 
 ## 1. Install
 
-Use Python 3.12 from the repository root:
+Use Python 3.12. From the repository root:
 
 ```sh
 python -m venv .venv
@@ -17,40 +16,36 @@ On Windows, activate the environment with `.venv\\Scripts\\activate` instead.
 
 ## 2. Run the example
 
-The repository includes a small CSA scan that is known to pass the current
-quality gate:
+The repository includes a CSA scan that passes the current quality gate:
 
 ```sh
 python scripts/pipeline/run_scan.py \
-  data/raw/csa_verified_ksh_1972322002235.png \
+  data/raw/csa_verified_bur_1973077231124.png \
   --output outputs/example \
-  --station KSH \
+  --station BUR \
   --diagnostics
 ```
 
-The command runs structure detection, frequency calibration, height
-calibration, warping, model inference, and CDF-like export.
+The command detects the scan structure, calibrates both axes, warps the image,
+runs model inference, and writes a CDF-like export.
 
-It uses the default model registered in `configs/model_candidates.json`. To
-try another included finalist, add for example `--model hybrid_unet`. A custom
-checkpoint can still be supplied with `--checkpoint`; the named `--model`
-takes precedence when both are provided.
+It uses the default model in `configs/model_candidates.json`. To try another
+included model, add `--model hybrid_unet`. You can pass a custom checkpoint
+with `--checkpoint`; `--model` takes precedence when both are provided.
 
 ## 3. Inspect the result
 
 The output directory contains:
 
-- `summary.json` — a compact record of the run and its physical axis ranges;
-- an `isis.ionogram.v1` artifact — the calibrated image, axes, mask, and
-  provenance;
+- `summary.json` — a compact run record and axis ranges;
+- an `isis.ionogram.v1` artifact — image, axes, mask, and provenance;
 - a model prediction NPZ file;
 - a model-derived CDF-like file; and
-- `diagnostics/` — static images and JSON records when `--diagnostics` is
-  enabled.
+- `diagnostics/` — static images and JSON records when enabled.
 
-The result is a prediction based on the CSA scan. It is not a measured NASA
-amplitude observation. See [the project overview](OVERVIEW.md) for the terms
-used here and [the pipeline guide](PIPELINE.md) for the stages in detail.
+The result is a prediction from the CSA scan, not a measured NASA amplitude.
+See [the project overview](OVERVIEW.md) for the terms and
+[the pipeline guide](PIPELINE.md) for the processing stages.
 
 ## 4. Open the notebooks
 
@@ -62,9 +57,9 @@ python -m jupyter lab
 
 Open the notebooks in this order:
 
-1. `01_end_to_end_pipeline.ipynb` — build and inspect one calibrated artifact;
-2. `02_structure_and_calibration.ipynb` — investigate geometry and axes; and
-3. `03_reconstruction_and_cdf.ipynb` — compare the three model predictions.
+1. `01_end_to_end_pipeline.ipynb` — build and inspect an artifact;
+2. `02_structure_and_calibration.ipynb` — inspect geometry and axes; and
+3. `03_reconstruction_and_cdf.ipynb` — compare the model predictions.
 
 The notebook guide explains what each one expects and produces.
 
@@ -75,7 +70,7 @@ new directory so that results from different scans do not overwrite one
 another. Use `--pair-name` when the filename does not contain the observation
 identity expected by the CDF exporter.
 
-If the scan is rejected, rerun with `--diagnostics` and inspect the reported
-status and the generated structure and calibration files. The pipeline keeps
-`review` and `not_usable` results visible; it does not silently turn them into
-usable training data.
+If the scan is rejected, rerun with `--diagnostics` and inspect the status,
+structure overlay, calibrated axes, warped image, and validity mask. The
+pipeline keeps `review` and `not_usable` results visible; it does not silently
+turn them into training data.

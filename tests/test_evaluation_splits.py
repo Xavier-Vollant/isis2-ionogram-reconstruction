@@ -43,9 +43,9 @@ def test_grouped_folds_never_leak():
     for fit, test in splits.grouped_folds(records, folds=4, seed=1):
         assert set(splits.groups_of(fit)) & set(splits.groups_of(test)) == set()
         seen_test.extend(splits.groups_of(test))
-    assert sorted(seen_test) == list(
-        "abcdefgh"
-    ), "every reel must be tested exactly once"
+    assert sorted(seen_test) == list("abcdefgh"), (
+        "every reel must be tested exactly once"
+    )
 
 
 def test_grouped_folds_refuses_more_folds_than_reels():

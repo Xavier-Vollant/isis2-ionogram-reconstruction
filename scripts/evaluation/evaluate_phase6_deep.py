@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Deep full-held-out evaluation for the strongest Phase 6 models."""
+"""Run a detailed held-out evaluation for selected models."""
 
 from __future__ import annotations
 
@@ -14,31 +14,34 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.evaluation.splits import group_summary  # noqa: E402
-from isis_research.grids import TARGET_HEIGHT, resample_grid  # noqa: E402
-from scripts.evaluation.benchmark_phase6_512_image_baselines import (  # noqa: E402
+from isis_research import ionogram
+from isis_research.evaluation.splits import group_summary
+from isis_research.grids import TARGET_HEIGHT, resample_grid
+from isis_research.models import image_features
+from scripts.evaluation.benchmark_phase6_512_image_baselines import (
     metric as image_metric,
+)
+from scripts.evaluation.benchmark_phase6_512_image_baselines import (
     predictions as baseline_predictions,
 )
-from scripts.evaluation.evaluate_phase6_512_image_model import (  # noqa: E402
+from scripts.evaluation.evaluate_phase6_512_image_model import (
     MAX_HEIGHT_KM,
+    load_model,
     path_metric,
     trace_candidate,
     trace_reference,
 )
-from scripts.evaluation.evaluate_phase6_512_image_model import load_model  # noqa: E402
-from scripts.training.train_phase6_512_image_model import load_sample, rows_for  # noqa: E402
-from isis_research.models import image_features  # noqa: E402
-
+from scripts.training.train_phase6_512_image_model import load_sample, rows_for
 
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
 DEFAULT_GROUPS = ROOT / "outputs/calibration/phase1_pairs_6400/manifest.csv"
 DEFAULT_OUTPUT = ROOT / "outputs/evaluation/phase6_deep_report"
 DEFAULT_CHECKPOINTS = {
-    "hybrid_unet": ROOT / "outputs/evaluation/phase6_continual_models/hybrid_unet/best_model.pt",
-    "norm_residual_unet": ROOT / "outputs/evaluation/phase6_continual_models/norm_residual_unet/best_model.pt",
+    "hybrid_unet": ROOT
+    / "outputs/evaluation/phase6_continual_models/hybrid_unet/best_model.pt",
+    "norm_residual_unet": ROOT
+    / "outputs/evaluation/phase6_continual_models/norm_residual_unet/best_model.pt",
 }
 TRACE_NAMES = ("trace_1", "trace_2")
 BASELINE_NAMES = ("inverted_film", "blurred_inverted_film")
@@ -50,6 +53,7 @@ def rows_for_path(path: Path):
 
 
 def correlation(left, right):
+    """Return Pearson correlation, using zero for degenerate inputs."""
     if len(left) < 2 or np.std(left) == 0 or np.std(right) == 0:
         return 0.0
     return float(np.corrcoef(left, right)[0, 1])
@@ -59,13 +63,21 @@ def calibration(prediction, target, mask):
     left = prediction[mask].astype(float)
     right = target[mask].astype(float)
     if len(left) < 2:
-        return {"prediction_mean": None, "target_mean": None, "prediction_std_ratio": None}
+        return {
+            "prediction_mean": None,
+            "target_mean": None,
+            "prediction_std_ratio": None,
+        }
     pred_mean = float(left.mean())
     target_mean = float(right.mean())
     pred_std = float(left.std())
     target_std = float(right.std())
     variance = float(np.var(left))
-    slope = float(np.cov(left, right, bias=True)[0, 1] / variance) if variance > 1e-12 else 0.0
+    slope = (
+        float(np.cov(left, right, bias=True)[0, 1] / variance)
+        if variance > 1e-12
+        else 0.0
+    )
     intercept = target_mean - slope * pred_mean
     calibrated = slope * left + intercept
     return {
@@ -81,6 +93,7 @@ def calibration(prediction, target, mask):
 
 
 def metric_record(prediction, target, mask):
+    """Compute masked image metrics for one candidate and target pair."""
     return {
         **image_metric(prediction, target, mask),
         **calibration(prediction, target, mask),
@@ -108,7 +121,9 @@ def summarize(items):
     result["p90_mae"] = float(np.percentile([item["mae"] for item in items], 90))
     result["mae_gt_0.15"] = int(sum(item["mae"] > 0.15 for item in items))
     result["mae_gt_0.20"] = int(sum(item["mae"] > 0.20 for item in items))
-    result["correlation_lt_0.20"] = int(sum(item["correlation"] < 0.20 for item in items))
+    result["correlation_lt_0.20"] = int(
+        sum(item["correlation"] < 0.20 for item in items)
+    )
     return result
 
 
@@ -123,15 +138,21 @@ def trace_summarize(items):
     )
     result = {}
     for field in fields:
-        values = [item[field] for item in items if item.get("comparable") and field in item]
+        values = [
+            item[field] for item in items if item.get("comparable") and field in item
+        ]
         result[field] = {
             "scans": len(values),
             "mean": float(np.mean(values)) if values else None,
             "median": float(np.median(values)) if values else None,
             "p90": float(np.percentile(values, 90)) if values else None,
         }
-    result["reference_detected_scans"] = int(sum(item.get("reference_points", 0) > 0 for item in items))
-    result["candidate_comparable_scans"] = int(sum(item.get("comparable") for item in items))
+    result["reference_detected_scans"] = int(
+        sum(item.get("reference_points", 0) > 0 for item in items)
+    )
+    result["candidate_comparable_scans"] = int(
+        sum(item.get("comparable") for item in items)
+    )
     return result
 
 
@@ -153,7 +174,9 @@ def worst_cases(records, count=15):
             "image": item["image"],
             "trace_1": item["trace_1"],
         }
-        for item in sorted(records, key=lambda item: item["image"]["mae"], reverse=True)[:count]
+        for item in sorted(
+            records, key=lambda item: item["image"]["mae"], reverse=True
+        )[:count]
     ]
 
 
@@ -165,12 +188,21 @@ def group_uncertainty(records):
 
 def save_partial(path, records, completed):
     path.write_text(
-        json.dumps({"schema": "isis.phase6_deep_partial.v1", "completed": completed, "records": records}, indent=2) + "\n",
+        json.dumps(
+            {
+                "schema": "isis.phase6_deep_partial.v1",
+                "completed": completed,
+                "records": records,
+            },
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
 
 
 def main():
+    """Parse CLI options and run the detailed held-out evaluation."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--targets", type=Path, default=DEFAULT_TARGETS)
@@ -218,10 +250,13 @@ def main():
         if pair_name in records:
             continue
         scan = ionogram.read_validated(args.corpus / row["csa_artifact"])
-        film, target, target_mask = load_sample(args.corpus, args.targets, row, target_rows)
+        film, target, target_mask = load_sample(
+            args.corpus, args.targets, row, target_rows
+        )
         common = {
             "pair_name": pair_name,
-            "reel": row.get("reel") or group_rows.get(pair_name, {}).get("reel", "<unknown>"),
+            "reel": row.get("reel")
+            or group_rows.get(pair_name, {}).get("reel", "<unknown>"),
             "station": row.get("station") or "<blank>",
             "axis_profile": f"{scan.frequency_mhz[0]:.1f}-{scan.frequency_mhz[-1]:.1f}MHz",
             "target_coverage": float(target_mask.mean()),
@@ -280,7 +315,10 @@ def main():
         records[pair_name] = {**common, "image": image, "trace": trace}
         if index == 1 or index % args.checkpoint_every == 0 or index == len(held_out):
             save_partial(partial_path, records, index)
-            print(f"deep evaluated {len(records)}/{len(held_out)}: {pair_name}", flush=True)
+            print(
+                f"deep evaluated {len(records)}/{len(held_out)}: {pair_name}",
+                flush=True,
+            )
 
     candidates = (*BASELINE_NAMES, *models)
     report_models = {}
@@ -304,7 +342,9 @@ def main():
                 "worst_cases": worst_cases(model_records),
             },
             "trace": {
-                trace_name: trace_summarize([record[trace_name] for record in model_records])
+                trace_name: trace_summarize(
+                    [record[trace_name] for record in model_records]
+                )
                 for trace_name in TRACE_NAMES
             },
         }
@@ -312,17 +352,22 @@ def main():
     report = {
         "schema": "isis.phase6_deep_heldout_evaluation.v1",
         "held_out_scans": len(held_out),
-        "models": {name: {"checkpoint": item["path"], "model": item["checkpoint"].get("model")} for name, item in models.items()},
+        "models": {
+            name: {"checkpoint": item["path"], "model": item["checkpoint"].get("model")}
+            for name, item in models.items()
+        },
         "baselines": list(BASELINE_NAMES),
         "trace_grid": {"height": 64, "frequency": 96, "max_height_km": MAX_HEIGHT_KM},
         "trace_method": "existing ridge-and-continuity extractor, identical target/candidate settings",
         "reports": report_models,
         "records": records,
     }
-    (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (args.output / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
 
     lines = [
-        "# Deep Phase 6 held-out evaluation",
+        "# Deep held-out evaluation",
         "",
         f"Full held-out set: **{len(held_out)} scans**. The final test split was not changed.",
         "",
@@ -336,7 +381,17 @@ def main():
         lines.append(
             f"| {name} | {summary['mean_mae']:.4f} | {summary['mean_rmse']:.4f} | {summary['mean_correlation']:.4f} | {summary['mean_prediction_std_ratio']:.3f} | {summary['p90_mae']:.4f} | {summary['mae_gt_0.20']} | {summary['correlation_lt_0.20']} |"
         )
-    lines.extend(["", "Std ratio below 1 means the output has less contrast than the NASA target. Oracle affine MAE is a diagnostic only; it fits a correction separately on each test scan and is not a valid deployment score.", "", "## Trace metrics", "", "| Candidate | Trace | Comparable scans | Median height error (km) | P90 height error (km) | Within 60 km | Candidate coverage |", "|---|---|---:|---:|---:|---:|---:|"])
+    lines.extend(
+        [
+            "",
+            "Std ratio below 1 means the output has less contrast than the NASA target. Oracle affine MAE is a diagnostic only; it fits a correction separately on each test scan and is not a valid deployment score.",
+            "",
+            "## Trace metrics",
+            "",
+            "| Candidate | Trace | Comparable scans | Median height error (km) | P90 height error (km) | Within 60 km | Candidate coverage |",
+            "|---|---|---:|---:|---:|---:|---:|",
+        ]
+    )
     for name in candidates:
         for trace_name in TRACE_NAMES:
             summary = report_models[name]["trace"][trace_name]
@@ -356,8 +411,18 @@ def main():
         overall = report_models[name]["image"]["group_uncertainty_mae"]["overall"]
         low = f"{overall['ci_low']:.4f}" if overall["ci_low"] is not None else "n/a"
         high = f"{overall['ci_high']:.4f}" if overall["ci_high"] is not None else "n/a"
-        lines.append(f"- {name}: reel-median MAE `{overall['value']:.4f}` with bootstrap interval `[{low}, {high}]`")
-    lines.extend(["", "## Scope", "", "This report evaluates image reconstruction, dynamic range, failure rates, reel/station stratification, and trace geometry. Trace extraction is a secondary diagnostic and does not establish physical correctness by itself.", ""])
+        lines.append(
+            f"- {name}: reel-median MAE `{overall['value']:.4f}` with bootstrap interval `[{low}, {high}]`"
+        )
+    lines.extend(
+        [
+            "",
+            "## Scope",
+            "",
+            "This report evaluates image reconstruction, dynamic range, failure rates, reel/station stratification, and trace geometry. Trace extraction is a secondary diagnostic and does not establish physical correctness by itself.",
+            "",
+        ]
+    )
     (args.output / "REPORT.md").write_text("\n".join(lines), encoding="utf-8")
     print(f"wrote {args.output / 'REPORT.md'}", flush=True)
 

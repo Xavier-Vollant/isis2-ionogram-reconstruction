@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Train a small masked CSA-to-NASA image translator.
+"""Train a small masked CSA-to-NASA image model.
 
-This is the first image-to-image smoke path.  It intentionally trains only a
-small subset when ``--train-limit`` is supplied; later experiments can reuse
-the same loader with different models and losses.
+Use `--train-limit` for a short smoke run.
 """
 
 from __future__ import annotations
@@ -19,9 +17,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.models import model_constructor  # noqa: E402
-
+from isis_research import ionogram
+from isis_research.models import model_constructor
 
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
@@ -30,11 +27,13 @@ GRID_SHAPE = (512, 512)
 
 
 def rows_for(path):
+    """Read a corpus or target manifest."""
     with (Path(path) / "manifest.csv").open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
 
 
 def load_sample(corpus, targets, row, target_rows):
+    """Load one film input, NASA target, and joint loss mask."""
     scan = ionogram.read_validated(corpus / row["csa_artifact"])
     target_row = target_rows[row["pair_name"]]
     with np.load(targets / target_row["target_artifact"], allow_pickle=False) as data:
@@ -57,6 +56,7 @@ def correlation(left, right, mask):
 
 
 def main():
+    """Parse CLI options and train the small masked image model."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--targets", type=Path, default=DEFAULT_TARGETS)
@@ -72,7 +72,7 @@ def main():
         raise SystemExit(f"output is not empty: {args.output}")
 
     import torch
-    import torch.nn.functional as functional
+    from torch.nn import functional
 
     torch.manual_seed(args.seed)
     torch.set_num_threads(min(4, torch.get_num_threads()))
@@ -81,7 +81,9 @@ def main():
     if args.train_limit < len(corpus_rows):
         corpus_rows = corpus_rows[: args.train_limit]
     target_rows = {row["pair_name"]: row for row in rows_for(args.targets)}
-    samples = [load_sample(args.corpus, args.targets, row, target_rows) for row in corpus_rows]
+    samples = [
+        load_sample(args.corpus, args.targets, row, target_rows) for row in corpus_rows
+    ]
 
     model = model_constructor(args.model)(1)
     optimizer = torch.optim.Adam(model.parameters(), lr=2e-3)
@@ -108,13 +110,17 @@ def main():
     train_metrics = []
     with torch.no_grad():
         for row, (film, target, mask) in zip(corpus_rows, samples):
-            prediction = torch.sigmoid(model(torch.from_numpy(film[None, None]))).numpy()[0]
+            prediction = torch.sigmoid(
+                model(torch.from_numpy(film[None, None]))
+            ).numpy()[0]
             train_metrics.append(
                 {
                     "pair_name": row["pair_name"],
                     "target_std": float(np.std(target[mask])),
                     "prediction_std": float(np.std(prediction[mask])),
-                    "masked_mae": float(np.mean(np.abs(prediction[mask] - target[mask]))),
+                    "masked_mae": float(
+                        np.mean(np.abs(prediction[mask] - target[mask]))
+                    ),
                     "masked_correlation": correlation(prediction, target, mask),
                 }
             )
@@ -141,17 +147,24 @@ def main():
         "train_metrics": train_metrics,
         "output_checkpoint": str(checkpoint),
         "loss_decreased": bool(losses[-1] < losses[0]),
-        "prediction_nonconstant": bool(any(item["prediction_std"] > 1e-4 for item in train_metrics)),
+        "prediction_nonconstant": bool(
+            any(item["prediction_std"] > 1e-4 for item in train_metrics)
+        ),
         "mean_prediction_target_std_ratio": float(
             np.mean(
-                [item["prediction_std"] / max(item["target_std"], 1e-9) for item in train_metrics]
+                [
+                    item["prediction_std"] / max(item["target_std"], 1e-9)
+                    for item in train_metrics
+                ]
             )
         ),
         "mean_train_correlation": float(
             np.mean([item["masked_correlation"] for item in train_metrics])
         ),
     }
-    (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (args.output / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report, indent=2), flush=True)
 
 

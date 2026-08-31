@@ -1,3 +1,5 @@
+"""Tests for model constructors and invalid model handling."""
+
 import pytest
 
 from isis_research.models import model_constructor

@@ -10,7 +10,7 @@ and discarded a healthy prefix.
 import numpy as np
 import pytest
 
-from isis_research.nasa.cdf import _cdf_sweep
+from isis_research.nasa.cdf import _cdf_sweep, cdf_amplitude
 
 
 def _data(frequency, heights=(0.0, 100.0)):
@@ -84,3 +84,32 @@ def test_amplitude_rows_follow_their_frequencies_through_the_cut():
     assert list(kept) == [0.5, 1.0, 1.5]
     # rows 2, 3, 4 of the original amplitude, whose values are 2, 3, 4
     assert [row[0] for row in amplitude] == [2.0, 3.0, 4.0]
+
+
+@pytest.mark.parametrize("shape", [(4,), (4, 2, 1), (3, 2)])
+def test_malformed_amplitude_shape_is_rejected(shape):
+    data = _data([0.5, 1.0, 1.5, 2.0])
+    data["nasa_amplitude"] = np.ones(shape)
+    with pytest.raises(ValueError, match="two-dimensional|does not match"):
+        _cdf_sweep(data)
+
+
+def test_cdf_amplitude_rejects_mismatched_axes(monkeypatch, tmp_path):
+    arrays = {
+        "ampl": np.ones((3, 2)),
+        "freq": np.array([1.0, 2.0, 3.0, 4.0]),
+        "v_height": np.array([100.0, 200.0]),
+    }
+
+    class FakeCDF:
+        def __init__(self, path):
+            pass
+
+        def varget(self, name):
+            return arrays[name]
+
+    monkeypatch.setattr("isis_research.nasa.cdf.cdflib.CDF", FakeCDF)
+    with pytest.raises(ValueError, match="does not match"):
+        cdf_amplitude(
+            tmp_path / "fake.cdf", np.array([1.0, 2.0]), np.array([100.0, 200.0])
+        )

@@ -1,14 +1,12 @@
-"""Torch model constructors for the CSA-to-NASA image translator.
+"""PyTorch model constructors for the CSA-to-NASA image translator.
 
-Lifted verbatim from ``scripts/benchmark_signal_detectors.py``.  ``torch_models``
-keeps the original constructor tuple for compatibility; ``model_constructor``
-is the named interface used by current training and inference code.
+``torch_models`` keeps the registered constructor order for compatibility.
+``model_constructor`` is the named interface used by training and inference.
 """
 
 from __future__ import annotations
 
 import numpy as np
-
 
 MODEL_INDEX = {
     "line_cnn": 0,
@@ -23,7 +21,7 @@ MODEL_INDEX = {
 
 
 def model_constructor(name):
-    """Return a named model constructor without exposing tuple indexes."""
+    """Return the registered constructor for a model name."""
     if name == "coord_unet":
         name = "unet"
     try:
@@ -34,7 +32,7 @@ def model_constructor(name):
 
 
 def image_features(signal, channels=1):
-    """Build model input channels, optionally including normalized grid position."""
+    """Build model input channels, optionally including grid position."""
     signal = np.asarray(signal, dtype=np.float32)
     if channels == 1:
         return signal[None]
@@ -51,8 +49,9 @@ def image_features(signal, channels=1):
 
 
 def torch_models():
+    """Return the registered PyTorch model constructors in order."""
     import torch
-    import torch.nn as nn
+    from torch import nn
 
     class LineCNN(nn.Module):
         def __init__(self, channels):
@@ -89,10 +88,14 @@ def torch_models():
         def __init__(self, channels):
             super().__init__()
             self.left = nn.Sequential(
-                nn.Conv2d(channels, 16, 3, padding=1), nn.ReLU(),
-                nn.Conv2d(16, 16, 3, padding=1), nn.ReLU(),
+                nn.Conv2d(channels, 16, 3, padding=1),
+                nn.ReLU(),
+                nn.Conv2d(16, 16, 3, padding=1),
+                nn.ReLU(),
             )
-            self.down = nn.Sequential(nn.MaxPool2d(2), nn.Conv2d(16, 32, 3, padding=1), nn.ReLU())
+            self.down = nn.Sequential(
+                nn.MaxPool2d(2), nn.Conv2d(16, 32, 3, padding=1), nn.ReLU()
+            )
             self.up = nn.ConvTranspose2d(32, 16, 2, stride=2)
             self.out = nn.Sequential(
                 nn.Conv2d(32, 16, 3, padding=1), nn.ReLU(), nn.Conv2d(16, 1, 1)
@@ -108,26 +111,38 @@ def torch_models():
         def __init__(self, channels):
             super().__init__()
             self.left = nn.Sequential(
-                nn.Conv2d(channels, 32, 3, padding=1), nn.ReLU(),
-                nn.Conv2d(32, 32, 3, padding=1), nn.ReLU(),
+                nn.Conv2d(channels, 32, 3, padding=1),
+                nn.ReLU(),
+                nn.Conv2d(32, 32, 3, padding=1),
+                nn.ReLU(),
             )
             self.down = nn.Sequential(
-                nn.MaxPool2d(2), nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(),
-                nn.Conv2d(64, 64, 3, padding=1), nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.Conv2d(32, 64, 3, padding=1),
+                nn.ReLU(),
+                nn.Conv2d(64, 64, 3, padding=1),
+                nn.ReLU(),
             )
             self.middle = nn.Sequential(
-                nn.MaxPool2d(2), nn.Conv2d(64, 128, 3, padding=1), nn.ReLU(),
-                nn.Conv2d(128, 128, 3, padding=1), nn.ReLU(),
+                nn.MaxPool2d(2),
+                nn.Conv2d(64, 128, 3, padding=1),
+                nn.ReLU(),
+                nn.Conv2d(128, 128, 3, padding=1),
+                nn.ReLU(),
             )
             self.up_down = nn.ConvTranspose2d(128, 64, 2, stride=2)
             self.up_left = nn.ConvTranspose2d(64, 32, 2, stride=2)
             self.decode_down = nn.Sequential(
-                nn.Conv2d(128, 64, 3, padding=1), nn.ReLU(),
-                nn.Conv2d(64, 64, 3, padding=1), nn.ReLU(),
+                nn.Conv2d(128, 64, 3, padding=1),
+                nn.ReLU(),
+                nn.Conv2d(64, 64, 3, padding=1),
+                nn.ReLU(),
             )
             self.decode_left = nn.Sequential(
-                nn.Conv2d(64, 32, 3, padding=1), nn.ReLU(),
-                nn.Conv2d(32, 32, 3, padding=1), nn.ReLU(),
+                nn.Conv2d(64, 32, 3, padding=1),
+                nn.ReLU(),
+                nn.Conv2d(32, 32, 3, padding=1),
+                nn.ReLU(),
             )
             self.out = nn.Conv2d(32, 1, 1)
 
@@ -145,7 +160,8 @@ def torch_models():
         def __init__(self, channels):
             super().__init__()
             self.body = nn.Sequential(
-                nn.Conv2d(channels, channels, 3, padding=1), nn.ReLU(),
+                nn.Conv2d(channels, channels, 3, padding=1),
+                nn.ReLU(),
                 nn.Conv2d(channels, channels, 3, padding=1),
             )
 
@@ -158,12 +174,16 @@ def torch_models():
             self.input = nn.Conv2d(channels, 32, 3, padding=1)
             self.left = nn.Sequential(ResidualBlock(32), ResidualBlock(32))
             self.down = nn.Sequential(
-                nn.MaxPool2d(2), nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(),
-                ResidualBlock(64), ResidualBlock(64),
+                nn.MaxPool2d(2),
+                nn.Conv2d(32, 64, 3, padding=1),
+                nn.ReLU(),
+                ResidualBlock(64),
+                ResidualBlock(64),
             )
             self.up = nn.ConvTranspose2d(64, 32, 2, stride=2)
             self.decode = nn.Sequential(
-                nn.Conv2d(64, 32, 3, padding=1), nn.ReLU(),
+                nn.Conv2d(64, 32, 3, padding=1),
+                nn.ReLU(),
                 ResidualBlock(32),
             )
             self.out = nn.Conv2d(32, 1, 1)
@@ -246,10 +266,16 @@ def torch_models():
                 nn.Conv2d(channels, 32, 3, padding=1), nn.ReLU(), ResidualBlock(32)
             )
             self.down = nn.Sequential(
-                nn.MaxPool2d(2), nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(), ResidualBlock(64)
+                nn.MaxPool2d(2),
+                nn.Conv2d(32, 64, 3, padding=1),
+                nn.ReLU(),
+                ResidualBlock(64),
             )
             self.middle = nn.Sequential(
-                nn.MaxPool2d(2), nn.Conv2d(64, 128, 3, padding=1), nn.ReLU(), ResidualBlock(128)
+                nn.MaxPool2d(2),
+                nn.Conv2d(64, 128, 3, padding=1),
+                nn.ReLU(),
+                ResidualBlock(128),
             )
             self.up_down = nn.ConvTranspose2d(128, 64, 2, stride=2)
             self.decode_down = nn.Sequential(

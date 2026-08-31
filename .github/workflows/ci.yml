@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project
+        run: python -m pip install -e '.[dev]'
+
+      - name: Check formatting
+        run: ruff format --check src scripts tests
+
+      - name: Lint
+        run: ruff check src scripts tests
+
+      - name: Compile Python files
+        run: python -m compileall -q src scripts tests
+
+      - name: Validate notebooks
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          for path in sorted(Path("notebooks").glob("*.ipynb")):
+              notebook = json.loads(path.read_text(encoding="utf-8"))
+              cells = notebook["cells"]
+              source = "\n\n".join(
+                  "".join(cell.get("source", []))
+                  for cell in cells
+                  if cell.get("cell_type") == "code"
+              )
+              compile(source, str(path), "exec")
+              if any(cell.get("outputs") for cell in cells):
+                  raise SystemExit(f"{path}: saved outputs must be stripped before committing")
+          PY
+
+      - name: Run tests
+        run: python -m pytest -p no:cacheprovider -q
+
+      - name: Run end-to-end smoke test
+        env:
+          MPLCONFIGDIR: ${{ runner.temp }}/final-isis-mpl
+        run: |
+          python scripts/pipeline/run_scan.py \
+            data/raw/csa_verified_bur_1973077231124.png \
+            --output "$RUNNER_TEMP/final-isis-smoke" \
+            --station BUR \
+            --diagnostics

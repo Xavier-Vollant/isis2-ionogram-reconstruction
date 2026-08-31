@@ -1,0 +1,25 @@
+FINAL ISIS
+Copyright 2026 Xavier Vollant
+
+Licensed under the Apache License, Version 2.0 (the "License"); you may not
+use this software except in compliance with the License. A copy of the
+License is included in the LICENSE file at the root of this repository.
+
+--------------------------------------------------------------------------
+
+Third-party data
+
+The Apache License above covers the source code, notebooks, configuration,
+and model checkpoints in this repository. It does not cover the third-party
+sample data redistributed here, which remains subject to the terms of its
+original publisher:
+
+  * Scanned ISIS-2 ionogram images under data/raw/ originate from the
+    Canadian Space Agency (CSA). See data/raw/README.md.
+
+  * ISIS-2 CDF reference files under data/samples/ originate from the NASA
+    Space Physics Data Facility (SPDF). See data/samples/README.md.
+
+FINAL ISIS is independent research software. It is not an official Canadian
+Space Agency or NASA product, and the inclusion of the material above does
+not imply endorsement by either organization.

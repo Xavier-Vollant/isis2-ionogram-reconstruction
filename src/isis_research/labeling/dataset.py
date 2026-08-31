@@ -1,24 +1,10 @@
-"""Supervision for a film-only landmark model, assembled from aligned batches.
+"""Build training arrays for a film-only landmark model.
 
-The alignment pipeline writes one `*_ml_labels.json` per scan. This module turns
-those into arrays a model can be fitted on, and it enforces three things the
-labels themselves record but a naive reader would throw away.
-
-`ignore` regions are not negatives. A marker predicted but never observed, a
-dark line the lattice rejected, and the film margin outside the exposed data are
-places where an absent label means unknown. Trained as background they teach a
-detector to suppress the lines it exists to find, so they are carried as a loss
-mask instead.
-
-`weak_label` rulings are the pipeline's own lattice projected across scans, not
-observations. They are down-weighted for fitting and excluded from scoring;
-`verified_height` rulings, confirmed against a matched NASA row, are the only
-non-circular ruling truth in the archive.
-
-Landmarks are one-dimensional. A ruling is a row and a marker is a column - the
-rulings are horizontal to within 1 px across 981 scans - so the model reads
-profiles, not pixels, and a scan becomes a few hundred numbers rather than a few
-hundred thousand.
+The alignment pipeline writes one `*_ml_labels.json` file per scan. This module
+turns those labels into profiles, targets, weights, and masks. `ignore` regions
+remain unknown rather than becoming negatives, and weak ruling labels are
+down-weighted and excluded from scoring. Verified height labels are the only
+independent ruling labels.
 """
 
 from __future__ import annotations
@@ -56,44 +42,32 @@ MAX_MARKER_RMS_PX = 3.0
 
 
 def load_manifest(batch_dir):
-    """-> {scan name: metrics} for every scan the batch aligned."""
+    """Load alignment metrics keyed by scan name."""
     path = Path(batch_dir) / "quality_manifest.json"
     records = json.loads(path.read_text())
     return {record["name"]: record.get("metrics", {}) for record in records}
 
 
 def passes_marker_gate(metrics):
+    """Return whether marker count and residual pass the training gate."""
     count = metrics.get("marker_count") or 0
     rms = metrics.get("marker_rms_px")
     return count >= MIN_MARKERS and rms is not None and rms <= MAX_MARKER_RMS_PX
 
 
 def load_pair_rows(review_csvs):
-    """-> {scan name: [review rows]}, so each scan can be traced to its film reel.
-
-    A list rather than a row: 11 of the 1499 ranked pairs give one NASA ionogram
-    two different CSA films, and `align_landmarks_batch` names its output
-    directory after the NASA side alone, so the second alignment overwrites the
-    first and the labels on disk belong to only one of the two films. Which one
-    is recoverable from the image shape, but not from the name.
-    """
+    """Load review rows grouped by scan name."""
     rows = {}
     for path in review_csvs:
-        for row in csv.DictReader(Path(path).open()):
-            name = Path(row["nasa_png_file"]).stem.split("_", 1)[1]
-            rows.setdefault(name, []).append(row)
+        with Path(path).open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                name = Path(row["nasa_png_file"]).stem.split("_", 1)[1]
+                rows.setdefault(name, []).append(row)
     return rows
 
 
 def _pair_for_scan(candidates, name, shape):
-    """-> the review row this scan's labels were written from.
-
-    Batches aligned since the collision fix name the pair `<nasa id>__<film
-    stem>` whenever one NASA ionogram matched more than one film, so the film is
-    named outright. Older batches carry the NASA id alone and the film has to be
-    recovered from the image shape, which distinguishes the colliding pairs in
-    every case present.
-    """
+    """Find the review row that produced a scan's labels."""
     if "__" in name:
         film_stem = name.split("__", 1)[1]
         for row in candidates:
@@ -107,17 +81,7 @@ def _pair_for_scan(candidates, name, shape):
 
 
 def index_scans(batch_dirs, review_csvs, film_dir):
-    """-> one record per gated scan, with its labels, its film, and its reel.
-
-    A scan aligned in two batches is indexed once. The batches overlap by design
-    - they were selected under different strategies against the same archive -
-    and counting a scan twice would weight its reel twice.
-
-    Only `v2` labels qualify. `v1` carries the rulings alone, with neither the
-    frequency markers nor the ignore regions, and reading it as if the missing
-    classes were absent would train the film margin and the rejected dark lines
-    as background. Batches written before `v2` must be re-aligned to be used.
-    """
+    """Return one indexed record per scan that passes the training gates."""
     film_dir = Path(film_dir)
     pairs = load_pair_rows(review_csvs)
     scans = {}
@@ -150,43 +114,38 @@ def index_scans(batch_dirs, review_csvs, film_dir):
 
 
 def resample(profile, length):
+    """Resample a one-dimensional profile to a fixed length."""
     source = np.linspace(0.0, 1.0, len(profile))
     return np.interp(np.linspace(0.0, 1.0, length), source, profile)
 
 
 def to_axis(position, native_length, length):
-    """Native pixel coordinate -> resampled coordinate."""
+    """Map a native pixel coordinate to a resampled axis."""
     return float(position) * (length - 1) / max(native_length - 1, 1)
 
 
 def to_native(position, native_length, length):
+    """Map a resampled coordinate back to native pixels."""
     return np.asarray(position, dtype=float) * max(native_length - 1, 1) / (length - 1)
 
 
 def highpass(profile, size):
-    """Local darkness against the broad density variation of the film.
-
-    Sign convention: positive means darker than surroundings, because every
-    landmark in these scans is a dark line on a lighter exposure.
-    """
+    """Return local darkness after removing broad film variation."""
     return median_filter(profile, size=size, mode="nearest") - profile
 
 
 def robust_scale(values):
+    """Return a nonzero scale based on median absolute deviation."""
     return max(1.4826 * float(np.median(np.abs(values - np.median(values)))), 1e-9)
 
 
 def row_profile(image):
+    """Return the mean value for each image row."""
     return image.mean(axis=1)
 
 
 def column_profile(image, top, bottom):
-    """Column means inside the exposed data area only.
-
-    The time-code band at the foot of the film carries digit strokes that a
-    full-height column mean reads as frequency markers, which is why the column
-    stage runs after the rows have been placed rather than beside it.
-    """
+    """Return column means inside the exposed data area."""
     top = int(np.clip(top, 0, image.shape[0] - 1))
     bottom = int(np.clip(bottom, top + 1, image.shape[0]))
     return image[top:bottom].mean(axis=0)
@@ -221,12 +180,7 @@ def build_targets(
     band=1.0,
     halo=2.0,
 ):
-    """-> per-class targets, fitting weights, and a loss mask.
-
-    Positives get a narrow band; the samples just outside it are masked rather
-    than trained as background, because a prediction one sample off a 3 px line
-    is not a false positive and punishing it teaches nothing but timidity.
-    """
+    """Build class targets, fitting weights, and a loss mask."""
     targets = {name: np.zeros(length) for name in classes}
     weights = {name: np.zeros(length) for name in classes}
     mask = np.ones(length)
@@ -271,12 +225,7 @@ def build_targets(
 
 
 def window_features(profile, size, half):
-    """-> (length, 2 * half + 3) local descriptions of one profile.
-
-    A window of the high-passed profile, standardized by the profile's own
-    robust scatter so film density and scanner gain do not enter, plus the
-    sample's position on the film and its own darkness.
-    """
+    """Build local profile features for each sample."""
     response = highpass(profile, size)
     response = response / robust_scale(response)
     length = len(response)
@@ -288,6 +237,7 @@ def window_features(profile, size, half):
 
 
 def feature_names(half):
+    """Return names for columns produced by `window_features`."""
     return [f"hp{offset:+d}" for offset in range(-half, half + 1)] + [
         "darkness",
         "position",
@@ -295,12 +245,7 @@ def feature_names(half):
 
 
 def scan_arrays(scan, half=8, weak_weight=0.3, bounds=None):
-    """-> profiles, targets, weights and masks for one scan, both axes.
-
-    `bounds` overrides the film boundaries used to profile the columns. Passing
-    the labelled boundaries scores the column stage on its own; leaving it None
-    is what happens at inference, where the rows have to be found first.
-    """
+    """Build profiles, targets, weights, and masks for one scan."""
     document = json.loads(Path(scan["labels_path"]).read_text())
     height, width = document["image_shape"]
     labels, ignore = document["labels"], document["ignore"]
@@ -393,14 +338,7 @@ def scan_arrays(scan, half=8, weak_weight=0.3, bounds=None):
 
 
 def nasa_marker_columns(labels_path):
-    """-> NASA's own marker column sequence for this ionogram, or None.
-
-    Read from the alignment result beside the labels. This is the one quantity
-    in the batch that owes nothing to the film detector, which is what makes it
-    usable as a test rather than as a label: predicted markers can be fitted
-    against it and the residual is an independent verdict on the frequency axis
-    they imply.
-    """
+    """Return stored NASA marker columns, if available."""
     path = Path(labels_path).with_name(
         Path(labels_path).name.replace("_ml_labels.json", ".json")
     )
@@ -411,7 +349,7 @@ def nasa_marker_columns(labels_path):
 
 
 def stack(arrays, axis, class_name):
-    """-> (features, target, weight, mask) pooled over scans."""
+    """Pool features, targets, weights, and masks over scans."""
     features = np.concatenate([item[axis]["features"] for item in arrays])
     target = np.concatenate([item[axis]["targets"][class_name] for item in arrays])
     weight = np.concatenate([item[axis]["weights"][class_name] for item in arrays])

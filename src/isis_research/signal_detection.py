@@ -1,9 +1,8 @@
-"""NASA-supervised signal occupancy for film ionograms.
+"""Signal occupancy labels and film-only features for ionograms.
 
-This module deliberately stops before amplitude assignment.  It represents a
-scan as three states: signal, no signal, and unknown.  NASA CDF amplitudes are
-used only to construct training/evaluation labels; the feature functions read
-the film warp only and are therefore usable when no NASA counterpart exists.
+The module stops before amplitude assignment. It represents signal, no signal,
+and unknown states. NASA amplitudes create labels; feature functions read only
+the film warp and can run without a NASA counterpart.
 """
 
 from __future__ import annotations
@@ -15,6 +14,8 @@ from scipy import ndimage
 
 from .extraction.echo import (
     extract as extract_traces,
+)
+from .extraction.echo import (
     parameters_for,
     ridge_score,
     scaled_kernel,
@@ -27,13 +28,10 @@ def nasa_occupancy(
     threshold: float = 2.5,
     ambiguity: float = 0.75,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return ``(score, labels, usable)`` from a NASA amplitude grid.
+    """Return scores, weak labels, and usable pixels from a NASA grid.
 
-    ``labels`` is 1 for locally elevated NASA signal, 0 for locally quiet
-    pixels, and -1 for an ambiguous or invalid pixel.  This is a reproducible
-    weak label, not a claim that every bright CDF pixel is a physical echo.
-    The local median removes broad illumination/background structure and the
-    MAD supplies a scan-specific noise scale.
+    Labels are 1 for elevated signal, 0 for quiet pixels, and -1 for unknown
+    or invalid pixels.
     """
 
     values = np.asarray(amplitude, dtype=float)
@@ -66,12 +64,10 @@ def nasa_trace_occupancy(
     threshold: float = 5.0,
     halfwidth: int = 1,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Return ``(score, labels, usable)`` around confident NASA traces.
+    """Return scores, labels, and usable pixels around confident NASA traces.
 
-    ``paths`` and ``confidence`` are shaped ``(trace, frequency)`` and use
-    height-bin indices.  Only frequency columns with a confident NASA trace
-    become usable training examples; undetected columns remain unknown rather
-    than being treated as negative echo evidence.
+    Columns without a confident trace remain unknown rather than becoming
+    negative examples.
     """
 
     valid = np.asarray(valid_mask, dtype=bool)
@@ -115,7 +111,7 @@ def nasa_trace_soft_targets(
     threshold: float = 5.0,
     scale: float = 5.0,
 ) -> np.ndarray:
-    """Return confidence-weighted positive targets with unknowns preserved."""
+    """Return confidence-weighted targets while preserving unknowns."""
 
     labels = np.asarray(labels, dtype=np.int8)
     confidence = np.asarray(confidence, dtype=float)
@@ -137,7 +133,7 @@ def nasa_trace_training_labels(
     confidence: np.ndarray,
     threshold: float = 7.0,
 ) -> np.ndarray:
-    """Hide low-confidence NASA positives from training without making negatives."""
+    """Hide low-confidence NASA positives without creating negatives."""
 
     labels = np.asarray(labels, dtype=np.int8)
     confidence = np.asarray(confidence, dtype=float)
@@ -159,7 +155,7 @@ def nasa_trace_persistent_training_labels(
     confidence: np.ndarray,
     min_run: int = 3,
 ) -> np.ndarray:
-    """Keep only NASA-labelled columns in runs that persist across frequency."""
+    """Keep labels only in runs that persist across frequency."""
 
     labels = np.asarray(labels, dtype=np.int8)
     confidence = np.asarray(confidence, dtype=float)
@@ -196,7 +192,7 @@ MULTISCALE_WIDTHS_KM = (150.0, 250.0, 450.0, 750.0)
 
 
 def film_feature_maps(film: np.ndarray, valid_mask: np.ndarray) -> np.ndarray:
-    """Build film-only features shaped ``(channels, height, frequency)``."""
+    """Build film-only features with shape `(channels, height, frequency)`."""
 
     values = np.asarray(film, dtype=float)
     valid = np.asarray(valid_mask, dtype=bool) & np.isfinite(values)
@@ -233,7 +229,7 @@ def multiscale_ridge_score(
     height_km: np.ndarray,
     widths_km=MULTISCALE_WIDTHS_KM,
 ) -> np.ndarray:
-    """Return the strongest normalized height-ridge response across widths."""
+    """Return the strongest normalized ridge response across widths."""
 
     return np.max(
         multiscale_ridge_features(film, valid_mask, height_km, widths_km),
@@ -247,7 +243,7 @@ def multiscale_ridge_features(
     height_km: np.ndarray,
     widths_km=MULTISCALE_WIDTHS_KM,
 ) -> np.ndarray:
-    """Return one normalized height-ridge channel per physical width."""
+    """Return one normalized ridge channel for each physical width."""
 
     values = np.asarray(film, dtype=float)
     valid = np.asarray(valid_mask, dtype=bool) & np.isfinite(values)
@@ -282,7 +278,7 @@ def continuity_ridge_score(
     traces: int = 2,
     halfwidth: int = 1,
 ) -> np.ndarray:
-    """Return score bands around film traces selected by frequency continuity."""
+    """Return score bands around traces selected by frequency continuity."""
 
     values = np.asarray(film, dtype=float)
     valid = np.asarray(valid_mask, dtype=bool) & np.isfinite(values)
@@ -321,7 +317,7 @@ def film_model_features(
     height_km: np.ndarray,
     channels: np.ndarray,
 ) -> np.ndarray:
-    """Build the persisted film feature channels required by a model."""
+    """Build the film feature channels requested by a model."""
 
     channels = np.asarray(channels, dtype=int).ravel()
     features = film_feature_maps(film, valid_mask)
@@ -340,7 +336,7 @@ def film_model_features(
 
 
 def sigmoid(values: np.ndarray) -> np.ndarray:
-    """Numerically stable logistic transform."""
+    """Apply the logistic transform with clipped inputs."""
 
     values = np.asarray(values, dtype=float)
     return (1.0 / (1.0 + np.exp(-np.clip(values, -40.0, 40.0)))).astype(np.float32)
@@ -349,13 +345,13 @@ def sigmoid(values: np.ndarray) -> np.ndarray:
 def score_to_probability(
     score: np.ndarray, threshold: float, scale: float
 ) -> np.ndarray:
-    """Map a fitted detector score to the Plan 1 probability contract."""
+    """Map a detector score to a probability."""
 
     return sigmoid((np.asarray(score, dtype=float) - threshold) / max(scale, 1e-3))
 
 
 def robust_scale(values: np.ndarray) -> float:
-    """Return a non-zero scale suitable for turning a score into a probability."""
+    """Return a nonzero robust scale for a score array."""
 
     values = np.asarray(values, dtype=float)
     finite = values[np.isfinite(values)]

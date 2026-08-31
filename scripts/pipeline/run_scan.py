@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run one raw CSA scan through calibration, inference, and CDF export."""
+"""Run one raw CSA scan through calibration, inference, and export."""
 
 from __future__ import annotations
 
@@ -14,26 +14,25 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.image_io import load_image  # noqa: E402
-from isis_research.nasa.model_cdf import (  # noqa: E402
+from isis_research import ionogram
+from isis_research.image_io import load_image
+from isis_research.nasa.model_cdf import (
     export_model_cdf,
     header_from_csa,
 )
-from scripts.pipeline.extract_scan_structure import (  # noqa: E402
+from scripts.pipeline.extract_scan_structure import (
     extract_structure,
     write_overlay,
 )
-from scripts.pipeline.fit_frequency_axis import fit_from_profile, load_json  # noqa: E402
-from scripts.pipeline.fit_height_axis import fit_from_profile as fit_height_from_profile  # noqa: E402
-from scripts.pipeline.infer_isis_model import (  # noqa: E402
+from scripts.pipeline.fit_frequency_axis import fit_from_profile, load_json
+from scripts.pipeline.fit_height_axis import fit_from_profile as fit_height_from_profile
+from scripts.pipeline.infer_isis_model import (
     candidate_checkpoint,
     infer,
     load_model_candidates,
 )
-from scripts.pipeline.standardize_film_only_512 import process as standardize  # noqa: E402
-from scripts.pipeline.warp_calibrated_scan import warp_one, write_figure  # noqa: E402
-
+from scripts.pipeline.standardize_film_only_512 import process as standardize
+from scripts.pipeline.warp_calibrated_scan import warp_one, write_figure
 
 DEFAULT_PROFILE = ROOT / "configs/film_calibration_profile.json"
 DEFAULT_MODEL = load_model_candidates()["default_model"]
@@ -105,6 +104,7 @@ def run_scan(
     diagnostics=False,
     model_name=None,
 ):
+    """Process one raw PNG through standardization, inference, and CDF export."""
     film_path = Path(film_path)
     output_dir = Path(output_dir)
     checkpoint = resolve_checkpoint(checkpoint, model_name)
@@ -115,7 +115,7 @@ def run_scan(
         if diagnostics:
             try:
                 _write_diagnostics(film_path, output_dir / "diagnostics", profile)
-            except Exception as error:
+            except Exception as error:  # noqa: BLE001 - diagnostics must not hide the primary error
                 reason = f"{reason}; diagnostics failed: {error}"
         raise ValueError(f"scan was not usable: {reason}")
 
@@ -164,9 +164,12 @@ def run_scan(
 
 
 def main(argv=None):
+    """Parse CLI options and run the complete single-scan pipeline."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("film", type=Path, help="raw CSA PNG to process")
-    parser.add_argument("--output", type=Path, required=True, help="new directory for this run")
+    parser.add_argument(
+        "--output", type=Path, required=True, help="new directory for this run"
+    )
     parser.add_argument(
         "--model",
         choices=tuple(load_model_candidates()["models"]),
@@ -178,10 +181,18 @@ def main(argv=None):
         default=DEFAULT_CHECKPOINT,
         help="custom checkpoint; --model takes precedence when both are supplied",
     )
-    parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE, help="calibration profile JSON")
-    parser.add_argument("--pair-name", help="observation name for the exported CDF header")
-    parser.add_argument("--station", default="", help="CSA station code for the exported CDF header")
-    parser.add_argument("--diagnostics", action="store_true", help="write static inspection products")
+    parser.add_argument(
+        "--profile", type=Path, default=DEFAULT_PROFILE, help="calibration profile JSON"
+    )
+    parser.add_argument(
+        "--pair-name", help="observation name for the exported CDF header"
+    )
+    parser.add_argument(
+        "--station", default="", help="CSA station code for the exported CDF header"
+    )
+    parser.add_argument(
+        "--diagnostics", action="store_true", help="write static inspection products"
+    )
     args = parser.parse_args(argv)
     summary = run_scan(
         args.film,

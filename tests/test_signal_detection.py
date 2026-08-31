@@ -1,16 +1,18 @@
+"""Tests for signal-detection features and target behavior."""
+
 import numpy as np
 
 from isis_research.signal_detection import (
-    film_feature_maps,
     continuity_ridge_score,
+    film_feature_maps,
     film_model_features,
     multiscale_ridge_features,
     multiscale_ridge_score,
     nasa_occupancy,
     nasa_trace_occupancy,
+    nasa_trace_persistent_training_labels,
     nasa_trace_soft_targets,
     nasa_trace_training_labels,
-    nasa_trace_persistent_training_labels,
 )
 
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Fit Phase 5's film-row to virtual-height mapping.
+"""Fit the film-row to virtual-height mapping.
 
-CDF-assisted results reuse the paired CDF landmark geometry.  Film-only
-results use the Phase 1 ruling scale and zero-height offset profile.
+CDF-assisted results use paired CDF landmarks; film-only results use the stored
+ruling scale and zero-height profile.
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ DEFAULT_OUT = ROOT / "outputs/calibration/phase5_height_axis"
 
 
 def load_json(path):
+    """Read a UTF-8 JSON sidecar into a Python object."""
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
@@ -44,8 +45,12 @@ def _map_rows(rows, anchor_rows, anchor_heights):
     result = np.interp(rows, anchor_rows, anchor_heights)
     low = rows < anchor_rows[0]
     high = rows > anchor_rows[-1]
-    low_slope = (anchor_heights[1] - anchor_heights[0]) / (anchor_rows[1] - anchor_rows[0])
-    high_slope = (anchor_heights[-1] - anchor_heights[-2]) / (anchor_rows[-1] - anchor_rows[-2])
+    low_slope = (anchor_heights[1] - anchor_heights[0]) / (
+        anchor_rows[1] - anchor_rows[0]
+    )
+    high_slope = (anchor_heights[-1] - anchor_heights[-2]) / (
+        anchor_rows[-1] - anchor_rows[-2]
+    )
     result[low] = anchor_heights[0] + (rows[low] - anchor_rows[0]) * low_slope
     result[high] = anchor_heights[-1] + (rows[high] - anchor_rows[-1]) * high_slope
     return result
@@ -140,8 +145,16 @@ def _cdf_mapping_anchors(structure, baseline_rows, baseline_heights, matches):
         if key not in selected or score > selected[key][2]:
             selected[key] = (height, row, score)
     selected = sorted(selected.values())
-    rows = [float(baseline_rows[0])] + [item[1] for item in selected] + [float(baseline_rows[-1])]
-    heights = [float(baseline_heights[0])] + [item[0] for item in selected] + [float(baseline_heights[-1])]
+    rows = (
+        [float(baseline_rows[0])]
+        + [item[1] for item in selected]
+        + [float(baseline_rows[-1])]
+    )
+    heights = (
+        [float(baseline_heights[0])]
+        + [item[0] for item in selected]
+        + [float(baseline_heights[-1])]
+    )
     if len(rows) < 3 or np.any(np.diff(rows) <= 0) or np.any(np.diff(heights) <= 0):
         return None
     return {
@@ -181,7 +194,9 @@ def fit_from_profile(structure, profile, frequency_result):
         return result
 
     if selected.endswith("__fallback"):
-        group = profile.get("format_fallbacks", {}).get(selected.removesuffix("__fallback"))
+        group = profile.get("format_fallbacks", {}).get(
+            selected.removesuffix("__fallback")
+        )
     else:
         group = profile.get("profiles", {}).get(selected)
     if not group:
@@ -208,7 +223,7 @@ def fit_from_profile(structure, profile, frequency_result):
             "profile": selected,
             "profile_sample_count": int(group.get("sample_count", 0)),
             "mapping": "affine_row_to_height",
-            "ruling_count": int(len(rows)),
+            "ruling_count": len(rows),
             "film_top_row": top_row,
             "film_bottom_row": float(
                 structure.get("film_region", {}).get("bottom_row", 0.0)
@@ -232,7 +247,11 @@ def fit_from_profile(structure, profile, frequency_result):
         return result
 
     zero_row = top_row + top_offset
-    actual_spacing = float(lattice.get("spacing_px")) if lattice.get("spacing_px") is not None else None
+    actual_spacing = (
+        float(lattice.get("spacing_px"))
+        if lattice.get("spacing_px") is not None
+        else None
+    )
     spacing_error = (
         abs(actual_spacing - expected_spacing)
         if actual_spacing is not None and expected_spacing is not None
@@ -245,9 +264,12 @@ def fit_from_profile(structure, profile, frequency_result):
         warnings.append("frequency_axis_needs_review")
     if group.get("sample_count", 0) < 25:
         warnings.append("low_height_profile_sample_count")
-    if spacing_error is not None and expected_spacing is not None:
-        if spacing_error > max(3.0, 0.15 * expected_spacing):
-            warnings.append("ruling_spacing_mismatch")
+    if (
+        spacing_error is not None
+        and expected_spacing is not None
+        and spacing_error > max(3.0, 0.15 * expected_spacing)
+    ):
+        warnings.append("ruling_spacing_mismatch")
     baseline_heights = {
         "anchor_rows": [0.0, float(structure["image_shape"][0] - 1)],
         "anchor_heights": [
@@ -255,9 +277,7 @@ def fit_from_profile(structure, profile, frequency_result):
             (float(structure["image_shape"][0] - 1) - zero_row) / px_per_km,
         ],
     }
-    local = _profile_mapping_anchors(
-        structure, zero_row, px_per_km, km_per_ruling
-    )
+    local = _profile_mapping_anchors(structure, zero_row, px_per_km, km_per_ruling)
     heights = (
         {
             "anchor_rows": local["anchor_rows"],
@@ -288,10 +308,12 @@ def fit_from_profile(structure, profile, frequency_result):
             ]
             if local is not None
             else None,
-            "mapping_anchor_count": int(len(heights["anchor_rows"])),
+            "mapping_anchor_count": len(heights["anchor_rows"]),
             "zero_row_px": float(zero_row),
             "px_per_km": float(px_per_km),
-            "km_per_ruling": float(km_per_ruling) if km_per_ruling is not None else None,
+            "km_per_ruling": float(km_per_ruling)
+            if km_per_ruling is not None
+            else None,
             "profile_ruling_spacing_px": expected_spacing,
             "observed_ruling_spacing_px": actual_spacing,
             "ruling_spacing_error_px": spacing_error,
@@ -330,7 +352,7 @@ def fit_from_landmark_reference(structure, frequency_result, landmark_document):
     result.update(
         {
             "mapping": "affine_row_to_height",
-            "cdf_height_anchor_count": int(len(anchor_rows)),
+            "cdf_height_anchor_count": len(anchor_rows),
         }
     )
     if (
@@ -353,7 +375,11 @@ def fit_from_landmark_reference(structure, frequency_result, landmark_document):
         for item in landmark_document.get("horizontal_matches", [])
         if item.get("status") == "matched_csa_candidate"
     ]
-    scores = [float(item["match_score"]) for item in matches if item.get("match_score") is not None]
+    scores = [
+        float(item["match_score"])
+        for item in matches
+        if item.get("match_score") is not None
+    ]
     warnings = []
     if frequency_result.get("status") == "not_usable":
         warnings.append("frequency_axis_not_usable")
@@ -364,9 +390,7 @@ def fit_from_landmark_reference(structure, frequency_result, landmark_document):
     elif max(scores, default=0.0) < 0.60:
         warnings.append("weak_cdf_horizontal_ruling_match")
     baseline_heights = {"anchor_rows": anchor_rows, "anchor_heights": anchor_heights}
-    local = _cdf_mapping_anchors(
-        structure, anchor_rows, anchor_heights, matches
-    )
+    local = _cdf_mapping_anchors(structure, anchor_rows, anchor_heights, matches)
     heights = (
         {
             "anchor_rows": local["anchor_rows"],
@@ -376,25 +400,31 @@ def fit_from_landmark_reference(structure, frequency_result, landmark_document):
         else baseline_heights
     )
     breakpoints = _ruling_breakpoints(structure, heights)
-    mapping_anchors = [
-        {
-            "film_row": float(row),
-            "virtual_height_km": float(height),
-            "source": "matched_cdf_horizontal_ruling",
-        }
-        for row, height in zip(heights["anchor_rows"], heights["anchor_heights"])
-    ] if local is not None else None
+    mapping_anchors = (
+        [
+            {
+                "film_row": float(row),
+                "virtual_height_km": float(height),
+                "source": "matched_cdf_horizontal_ruling",
+            }
+            for row, height in zip(heights["anchor_rows"], heights["anchor_heights"])
+        ]
+        if local is not None
+        else None
+    )
     result.update(
         {
             "status": "usable" if not warnings else "review",
             "confidence": "high" if not warnings else "medium",
-            "cdf_horizontal_match_count": int(len(matches)),
+            "cdf_horizontal_match_count": len(matches),
             "cdf_horizontal_match_score_max": max(scores) if scores else None,
             "anchor_rows": heights["anchor_rows"].tolist(),
             "anchor_heights_km": heights["anchor_heights"].tolist(),
-            "mapping": "piecewise_cdf_anchor" if local is not None else "affine_row_to_height",
+            "mapping": "piecewise_cdf_anchor"
+            if local is not None
+            else "affine_row_to_height",
             "mapping_anchors": mapping_anchors,
-            "mapping_anchor_count": int(len(heights["anchor_rows"])),
+            "mapping_anchor_count": len(heights["anchor_rows"]),
             "zero_row_px": float(anchor_rows[0])
             if len(anchor_heights) >= 1 and anchor_heights[0] == 0.0
             else None,
@@ -404,7 +434,9 @@ def fit_from_landmark_reference(structure, frequency_result, landmark_document):
             ),
             "film_top_row": float(structure["film_region"]["top_row"]),
             "film_bottom_row": float(structure["film_region"]["bottom_row"]),
-            "height_min_km": float(_map_rows([0], heights["anchor_rows"], heights["anchor_heights"])[0]),
+            "height_min_km": float(
+                _map_rows([0], heights["anchor_rows"], heights["anchor_heights"])[0]
+            ),
             "height_max_km": float(
                 _map_rows(
                     [structure["image_shape"][0] - 1],
@@ -420,8 +452,11 @@ def fit_from_landmark_reference(structure, frequency_result, landmark_document):
 
 
 def fit_structure(structure, profile, frequency_result, landmark_document=None):
+    """Choose CDF landmarks or the profile fallback for one height axis."""
     if landmark_document is not None:
-        return fit_from_landmark_reference(structure, frequency_result, landmark_document)
+        return fit_from_landmark_reference(
+            structure, frequency_result, landmark_document
+        )
     return fit_from_profile(structure, profile, frequency_result)
 
 
@@ -443,6 +478,7 @@ def process_manifest(
     route="both",
     limit=None,
 ):
+    """Fit height axes for a manifest and write JSON sidecars."""
     phase1_manifest = Path(phase1_manifest)
     structure_dir, frequency_dir, landmark_dir, out_dir = map(
         Path, (structure_dir, frequency_dir, landmark_dir, out_dir)
@@ -478,7 +514,9 @@ def process_manifest(
                     "status": result["status"],
                     "source": result["source"],
                     "profile": result.get("profile"),
-                    "ruling_count": result.get("ruling_count", len(result.get("breakpoints", []))),
+                    "ruling_count": result.get(
+                        "ruling_count", len(result.get("breakpoints", []))
+                    ),
                     "height_anchor_count": result.get("cdf_height_anchor_count", 2),
                     "zero_row_px": result.get("zero_row_px"),
                     "px_per_km": result.get("px_per_km"),
@@ -500,9 +538,9 @@ def process_manifest(
         writer.writeheader()
         writer.writerows(records)
     (out_dir / "README.md").write_text(
-        "# Phase 5 virtual-height axes\n\n"
+        "# Virtual-height mappings\n\n"
         f"Height mappings for {len(rows)} scans and route(s): {', '.join(routes)}.\n\n"
-        "CDF-assisted outputs use the absolute CDF/film geometry plus trusted interior CDF horizontal matches when available. Film-only outputs use the Phase 1 profile's ruling scale and observed ruling lattice when it is consistent. Each JSON maps film rows to estimated virtual height in kilometres and records confidence/warnings.\n\n"
+        "CDF-assisted outputs use the paired CDF/film geometry and trusted interior CDF horizontal matches when available. Film-only outputs use the stored ruling scale and observed ruling lattice when consistent. Each JSON maps film rows to estimated virtual height in kilometres and records confidence and warnings.\n\n"
         "A `review` or `not_usable` result must not be presented as a precise absolute height calibration.\n",
         encoding="utf-8",
     )
@@ -510,6 +548,7 @@ def process_manifest(
 
 
 def main():
+    """Parse CLI options and fit film rows to virtual height."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase1-manifest", type=Path, default=DEFAULT_PHASE1_MANIFEST)
     parser.add_argument("--structure-dir", type=Path, default=DEFAULT_STRUCTURE_DIR)
@@ -517,7 +556,9 @@ def main():
     parser.add_argument("--landmark-dir", type=Path, default=DEFAULT_LANDMARK_DIR)
     parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT)
-    parser.add_argument("--route", choices=["cdf_assisted", "film_only", "both"], default="both")
+    parser.add_argument(
+        "--route", choices=["cdf_assisted", "film_only", "both"], default="both"
+    )
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
     records = process_manifest(

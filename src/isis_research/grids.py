@@ -1,10 +1,7 @@
-"""The common 64x96 evaluation grid, and the resamplers that land on it.
+"""Shared evaluation-grid constants and resampling helpers.
 
-Lifted verbatim from ``scripts/benchmark_signal_detectors.py`` and
-``scripts/benchmark_amplitude_workflows.py`` so the pipeline no longer imports
-its constants out of a benchmark script.  The two resamplers are kept separate
-on purpose: they differ in how they treat points outside the source support and
-in their weight denominators, so they are not interchangeable.
+The two resamplers are separate because they handle points outside the source
+support and their weight denominators differently.
 """
 
 from __future__ import annotations
@@ -22,7 +19,7 @@ FREQUENCY = TARGET_FREQUENCY
 
 
 def resample_grid(values, source_y, source_x, fill_value=0.0):
-    """Bilinearly resample a sorted grid onto the common 64x96 grid."""
+    """Resample a sorted grid onto the common 64x96 grid."""
 
     source_y = np.asarray(source_y, dtype=float).ravel()
     source_x = np.asarray(source_x, dtype=float).ravel()
@@ -70,7 +67,7 @@ def resample_grid(values, source_y, source_x, fill_value=0.0):
 
 
 def _resample_grid(values, source_y, source_x, fill_value=0.0):
-    """Bilinearly resample a sorted 2-D grid onto HEIGHT x FREQUENCY."""
+    """Resample a sorted 2-D grid onto the common height-by-frequency grid."""
     source_y = np.asarray(source_y, dtype=float)
     source_x = np.asarray(source_x, dtype=float)
     values = np.asarray(values, dtype=float)
@@ -110,7 +107,7 @@ def _resample_grid(values, source_y, source_x, fill_value=0.0):
 
 
 def load_film(path):
-    """Read a validated artifact and put its film signal on the common grid."""
+    """Read an artifact and put its film signal on the common grid."""
     scan = ionogram.read_validated(path)
     film = 1.0 - scan.intensity
     valid = scan.valid_mask

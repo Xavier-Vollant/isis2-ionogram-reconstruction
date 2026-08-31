@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Fit Phase 4's film-column to frequency mapping.
+"""Fit the film-column to frequency mapping.
 
-The CDF-assisted batch can use the already-produced landmark JSON as its CDF
-reference.  The film-only batch uses only the Phase 1 profile and Phase 3
-candidate markers.  Neither path renders or warps the image.
+The command supports CDF-assisted and film-only calibration. It does not render
+or warp the image.
 """
 
 from __future__ import annotations
@@ -19,17 +18,15 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
-from isis_research.registration import landmarks  # noqa: E402
+from isis_research.registration import landmarks
 
-try:  # noqa: E402
+try:
     from scripts.pipeline.route_calibration import (
-        candidate_groups,
         scan_descriptor,
         select_film_profile,
     )
 except ModuleNotFoundError:  # direct script execution
     from scripts.pipeline.route_calibration import (
-        candidate_groups,
         scan_descriptor,
         select_film_profile,
     )
@@ -43,6 +40,7 @@ DEFAULT_OUT = ROOT / "outputs/calibration/phase4_frequency_axis"
 
 
 def load_json(path):
+    """Read a UTF-8 JSON sidecar into a Python object."""
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
@@ -155,7 +153,7 @@ def fit_reference(observed_markers, reference, source=None, profile=None):
         "status": status,
         "mapping": "monotonic_piecewise_linear",
         "matched_marker_count": int(fit["count"]),
-        "reference_marker_count": int(len(reference_columns)),
+        "reference_marker_count": len(reference_columns),
         "marker_coverage": coverage,
         "marker_rms_px": float(fit["rms_px"]),
         "marker_max_error_px": float(fit["max_error_px"]),
@@ -169,6 +167,7 @@ def fit_reference(observed_markers, reference, source=None, profile=None):
 
 
 def fit_from_profile(observed_markers, image_shape, profile, metadata=None):
+    """Fit the image-only marker profile and return a frequency-axis record."""
     metadata = metadata or {}
     descriptor = scan_descriptor(np.zeros(image_shape, dtype=float), metadata)
     selection = select_film_profile(observed_markers, descriptor, profile, metadata)
@@ -207,6 +206,7 @@ def fit_from_profile(observed_markers, image_shape, profile, metadata=None):
 
 
 def fit_structure(structure, profile, metadata=None, reference=None, cdf=None):
+    """Choose the CDF or film-only route and fit one scan's frequency axis."""
     observed = [
         item["x"]
         for item in structure.get("vertical_markers", {}).get("candidates", [])
@@ -245,21 +245,17 @@ def process_manifest(
     out_dir,
     phase1_records=DEFAULT_PHASE1_RECORDS,
 ):
+    """Fit frequency axes for a manifest and write JSON sidecars."""
     phase1_manifest = Path(phase1_manifest)
     structure_dir = Path(structure_dir)
     profile = load_json(profile_path)
     landmark_paths = _landmark_paths(landmark_dir)
-    phase1_rows = list(
-        csv.DictReader(phase1_manifest.open(newline="", encoding="utf-8"))
-    )
+    with phase1_manifest.open(newline="", encoding="utf-8") as handle:
+        phase1_rows = list(csv.DictReader(handle))
     records_by_pair = {}
     if Path(phase1_records).exists():
-        records_by_pair = {
-            item["name"]: item
-            for item in csv.DictReader(
-                Path(phase1_records).open(newline="", encoding="utf-8")
-            )
-        }
+        with Path(phase1_records).open(newline="", encoding="utf-8") as handle:
+            records_by_pair = {item["name"]: item for item in csv.DictReader(handle)}
     cdf_dir = Path(out_dir) / "cdf_assisted"
     film_dir = Path(out_dir) / "film_only"
     cdf_dir.mkdir(parents=True, exist_ok=True)
@@ -314,10 +310,10 @@ def process_manifest(
         writer.writeheader()
         writer.writerows(records)
     (Path(out_dir) / "README.md").write_text(
-        "# Phase 4 frequency axes\n\n"
+        "# Frequency-axis fits\n\n"
         f"Frequency-axis fits for {len(records)} scans.\n\n"
-        "`cdf_assisted/` uses the matching CDF-derived landmark reference; "
-        "`film_only/` uses only the Phase 1 profile and Phase 3 markers. Each "
+        "`cdf_assisted/` uses matching CDF landmarks; "
+        "`film_only/` uses the stored calibration profile and detected markers. Each "
         "JSON contains a monotonic piecewise film-column→MHz mapping.\n",
         encoding="utf-8",
     )
@@ -325,6 +321,7 @@ def process_manifest(
 
 
 def main():
+    """Parse CLI options and fit film columns to frequency."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--structure", type=Path, default=None)
     parser.add_argument("--reference-json", type=Path, default=None)

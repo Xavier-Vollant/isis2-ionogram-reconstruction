@@ -1,1 +1,1 @@
-"""Extensible package skeleton for historical ISIS-2 research."""
+"""Reusable tools for calibrating scanned ISIS-2 ionograms."""

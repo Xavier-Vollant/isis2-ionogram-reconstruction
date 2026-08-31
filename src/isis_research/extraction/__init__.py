@@ -1,1 +1,1 @@
-"""Future echo and trace extraction methods."""
+"""Tools for finding echo traces in calibrated ionograms."""

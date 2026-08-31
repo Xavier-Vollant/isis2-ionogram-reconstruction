@@ -1,6 +1,11 @@
+"""Tests for virtual-height calibration paths."""
+
 import numpy as np
 
-from scripts.pipeline.fit_height_axis import fit_from_landmark_reference, fit_from_profile
+from scripts.pipeline.fit_height_axis import (
+    fit_from_landmark_reference,
+    fit_from_profile,
+)
 
 
 def _structure():
@@ -8,7 +13,11 @@ def _structure():
         "image_shape": [120, 200],
         "film_region": {"top_row": 10.0, "bottom_row": 110.0},
         "horizontal_rulings": {
-            "lattice": {"status": "regular_lattice", "spacing_px": 20.0, "rows": [30.0, 50.0, 70.0, 90.0]}
+            "lattice": {
+                "status": "regular_lattice",
+                "spacing_px": 20.0,
+                "rows": [30.0, 50.0, 70.0, 90.0],
+            }
         },
     }
 
@@ -48,12 +57,16 @@ def test_cdf_height_axis_preserves_piecewise_monotonic_anchors():
                 "vertical_rows": [10.0, 110.0],
                 "vertical_heights": [0.0, 2000.0],
             },
-            "horizontal_matches": [{"status": "matched_csa_candidate", "match_score": 0.8}],
+            "horizontal_matches": [
+                {"status": "matched_csa_candidate", "match_score": 0.8}
+            ],
         },
     )
     assert result["status"] == "usable"
     assert result["mapping"] == "affine_row_to_height"
-    assert np.all(np.diff([item["virtual_height_km"] for item in result["breakpoints"]]) > 0)
+    assert np.all(
+        np.diff([item["virtual_height_km"] for item in result["breakpoints"]]) > 0
+    )
 
 
 def test_cdf_height_axis_uses_trusted_interior_match_as_local_anchor():

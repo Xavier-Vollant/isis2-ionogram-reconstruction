@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Quality-gate Phase 6 calibrations and select the best route per scan.
+"""Audit calibration sidecars and select the best route for each scan.
 
-Phase 7 does not recalibrate or rerender images.  It audits the existing
-Phase 3--6 sidecars, assigns a route-level status and score, and selects the
-strongest available route for each paired scan.
+The gate reuses existing results. It does not recalibrate or rerender images.
 """
 
 from __future__ import annotations
@@ -13,13 +11,15 @@ import csv
 import json
 import math
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-from isis_research import ionogram  # noqa: E402
+from isis_research import ionogram
+
 DEFAULT_PHASE1_MANIFEST = ROOT / "outputs/calibration/phase1_pairs/manifest.csv"
 DEFAULT_STRUCTURE_DIR = ROOT / "outputs/calibration/phase3_structure/json"
 DEFAULT_FREQUENCY_DIR = ROOT / "outputs/calibration/phase4_frequency_axis"
@@ -40,6 +40,7 @@ ROUTE_PREFERENCE = {"cdf_assisted": 1, "film_only": 0}
 
 
 def load_json(path):
+    """Read a UTF-8 JSON sidecar into a Python object."""
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
@@ -114,10 +115,15 @@ def _support(values, candidates, tolerance):
     values = np.asarray(values, dtype=float)
     candidates = np.asarray(candidates, dtype=float)
     if not len(values) or not len(candidates):
-        return {"count": int(len(values)), "supported": 0, "fraction": 0.0, "max_distance": None}
+        return {
+            "count": len(values),
+            "supported": 0,
+            "fraction": 0.0,
+            "max_distance": None,
+        }
     distances = np.min(np.abs(values[:, None] - candidates[None, :]), axis=1)
     return {
-        "count": int(len(values)),
+        "count": len(values),
         "supported": int(np.sum(distances <= tolerance)),
         "fraction": float(np.mean(distances <= tolerance)),
         "max_distance": float(np.max(distances)),
@@ -128,8 +134,7 @@ def _monotonic_mapping(points):
     if len(points) < 2:
         return False
     return all(
-        left[0] < right[0] and left[1] < right[1]
-        for left, right in zip(points, points[1:])
+        left[0] < right[0] and left[1] < right[1] for left, right in pairwise(points)
     )
 
 
@@ -240,7 +245,11 @@ def height_quality(document, structure, route):
     else:
         top = _number(film_region.get("top_row"))
         bottom = _number(film_region.get("bottom_row"))
-        if top is None or bottom is None or not (0 <= top < bottom <= image_shape[0] - 1):
+        if (
+            top is None
+            or bottom is None
+            or not (0 <= top < bottom <= image_shape[0] - 1)
+        ):
             errors.append("film_region_is_invalid")
 
     height_min = _number(document.get("height_min_km"))
@@ -302,9 +311,7 @@ def mapping_evidence_quality(structure, frequency, height):
     vertical_candidates = [item for item in vertical_candidates if item is not None]
     frequency_points = _axis_points(frequency, "film_column", "frequency_mhz")
     frequency_columns = [item[0] for item in frequency_points]
-    frequency_support = _support(
-        frequency_columns, vertical_candidates, tolerance_px
-    )
+    frequency_support = _support(frequency_columns, vertical_candidates, tolerance_px)
     if frequency_points and not vertical_candidates:
         errors.append("frequency_mapping_has_no_csa_marker_evidence")
     elif frequency_points:
@@ -312,7 +319,9 @@ def mapping_evidence_quality(structure, frequency, height):
             warnings.append("frequency_mapping_has_weak_csa_marker_support")
         if (frequency_support["max_distance"] or 0.0) > tolerance_px:
             warnings.append("frequency_mapping_has_distant_csa_marker")
-    if width is not None and any(column < 0 or column > width - 1 for column in frequency_columns):
+    if width is not None and any(
+        column < 0 or column > width - 1 for column in frequency_columns
+    ):
         errors.append("frequency_mapping_leaves_csa_image")
 
     coverage = _number(frequency.get("marker_coverage"))
@@ -370,7 +379,11 @@ def warp_artifact_quality(warp, frequency, height, structure):
     errors = []
     path = _path_from_sidecar(warp.get("npz_sidecar"))
     if path is None or not path.is_file() or warp.get("status") == "not_usable":
-        return {"score": 0.0 if warp.get("status") == "not_usable" else 100.0, "warnings": warnings, "errors": errors}
+        return {
+            "score": 0.0 if warp.get("status") == "not_usable" else 100.0,
+            "warnings": warnings,
+            "errors": errors,
+        }
 
     try:
         artifact = ionogram.read_validated(path)
@@ -384,7 +397,9 @@ def warp_artifact_quality(warp, frequency, height, structure):
 
     if warped.ndim != 2 or valid.shape != warped.shape:
         errors.append("warp_npz_grid_shape_is_inconsistent")
-    if warped.ndim == 2 and (len(height_axis) != warped.shape[0] or len(frequency_axis) != warped.shape[1]):
+    if warped.ndim == 2 and (
+        len(height_axis) != warped.shape[0] or len(frequency_axis) != warped.shape[1]
+    ):
         errors.append("warp_npz_axes_do_not_match_grid")
     if len(frequency_axis) >= 2 and np.any(np.diff(frequency_axis) <= 0):
         errors.append("warp_frequency_grid_is_not_increasing")
@@ -454,7 +469,11 @@ def warp_quality(document):
     height_min = _number(document.get("height_min_km"))
     height_max = _number(document.get("height_max_km"))
     if status != "not_usable":
-        if frequency_min is None or frequency_max is None or frequency_max <= frequency_min:
+        if (
+            frequency_min is None
+            or frequency_max is None
+            or frequency_max <= frequency_min
+        ):
             errors.append("warp_frequency_extent_is_invalid")
         if height_min is None or height_max is None or height_max <= height_min:
             errors.append("warp_height_extent_is_invalid")
@@ -462,7 +481,10 @@ def warp_quality(document):
             warnings.append("warp_height_starts_below_zero")
 
         for key in ("npz_sidecar",):
-            if _path_from_sidecar(document.get(key)) is None or not _path_from_sidecar(document.get(key)).is_file():
+            if (
+                _path_from_sidecar(document.get(key)) is None
+                or not _path_from_sidecar(document.get(key)).is_file()
+            ):
                 errors.append(f"warp_{key}_artifact_missing")
 
     score = _bounded(coverage)
@@ -481,7 +503,7 @@ def warp_quality(document):
 
 
 def evaluate_route(route, structure, frequency, height, warp):
-    """Return a route-level Phase 7 report."""
+    """Return a quality report for one route."""
     frequency_check = frequency_quality(frequency)
     height_check = height_quality(height, structure, route)
     warp_check = warp_quality(warp)
@@ -489,7 +511,13 @@ def evaluate_route(route, structure, frequency, height, warp):
     artifact_check = warp_artifact_quality(warp, frequency, height, structure)
     warnings = []
     errors = []
-    for check in (frequency_check, height_check, warp_check, evidence_check, artifact_check):
+    for check in (
+        frequency_check,
+        height_check,
+        warp_check,
+        evidence_check,
+        artifact_check,
+    ):
         for warning in check["warnings"]:
             _append_unique(warnings, warning)
         for error in check["errors"]:
@@ -500,7 +528,8 @@ def evaluate_route(route, structure, frequency, height, warp):
     informational = sorted(
         warning
         for warning in set(frequency.get("warnings", []))
-        if warning in {"high_frequency_markers_missing", "low_frequency_markers_missing"}
+        if warning
+        in {"high_frequency_markers_missing", "low_frequency_markers_missing"}
     )
 
     if errors:
@@ -567,23 +596,25 @@ def select_route(reports):
             "selected_score": 0.0,
         }
 
-    selected = sorted(
+    selected = max(
         candidates,
         key=lambda item: (
             STATUS_RANK[item["status"]],
             item["quality_score"],
             ROUTE_PREFERENCE.get(item["route"], 0),
         ),
-        reverse=True,
-    )[0]
+    )
     alternatives = [item for item in reports if item is not selected]
     if selected["status"] == "usable":
         reason = "highest_quality_usable_route"
     else:
         reason = "best_available_route_requires_review"
-    if alternatives and all(item["status"] != "not_usable" for item in alternatives):
-        if abs(selected["quality_score"] - alternatives[0]["quality_score"]) < 5.0:
-            reason = "routes_are_close;_selected_by_quality_and_cdf_tiebreak"
+    if (
+        alternatives
+        and all(item["status"] != "not_usable" for item in alternatives)
+        and abs(selected["quality_score"] - alternatives[0]["quality_score"]) < 5.0
+    ):
+        reason = "routes_are_close;_selected_by_quality_and_cdf_tiebreak"
     return {
         "status": selected["status"],
         "selected_route": selected["route"],
@@ -610,7 +641,9 @@ def _route_record(pair, report, warp, comparison_dir, out_dir):
         "warnings": ";".join(report["warnings"]),
         "informational_warnings": ";".join(report.get("informational_warnings", [])),
         "errors": ";".join(report["errors"]),
-        "quality_report": str((out_dir / report["route"] / f"{stem}_quality.json").relative_to(out_dir)),
+        "quality_report": str(
+            (out_dir / report["route"] / f"{stem}_quality.json").relative_to(out_dir)
+        ),
         "warp_graph": warp.get("graph", ""),
         "comparison_graph": str(comparison) if comparison.is_file() else "",
     }
@@ -626,6 +659,7 @@ def process_manifest(
     out_dir=DEFAULT_OUT,
     limit=None,
 ):
+    """Audit both calibration routes and write final route selections."""
     phase1_manifest = Path(phase1_manifest)
     structure_dir, frequency_dir, height_dir, warp_dir = map(
         Path, (structure_dir, frequency_dir, height_dir, warp_dir)
@@ -653,7 +687,9 @@ def process_manifest(
             route_dir.mkdir(parents=True, exist_ok=True)
             quality_path = route_dir / f"{stem}_quality.json"
             quality_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-            route_records.append(_route_record(pair, report, warp, comparison_dir, out_dir))
+            route_records.append(
+                _route_record(pair, report, warp, comparison_dir, out_dir)
+            )
             reports.append(report)
             route_warps[route] = warp
 
@@ -713,29 +749,33 @@ def process_manifest(
 
     out_dir.mkdir(parents=True, exist_ok=True)
     route_fields = list(route_records[0]) if route_records else []
-    with (out_dir / "route_quality_manifest.csv").open("w", newline="", encoding="utf-8") as handle:
+    with (out_dir / "route_quality_manifest.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as handle:
         writer = csv.DictWriter(handle, fieldnames=route_fields)
         writer.writeheader()
         writer.writerows(route_records)
     final_fields = list(final_records[0]) if final_records else []
-    with (out_dir / "final_routing.csv").open("w", newline="", encoding="utf-8") as handle:
+    with (out_dir / "final_routing.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as handle:
         writer = csv.DictWriter(handle, fieldnames=final_fields)
         writer.writeheader()
         writer.writerows(final_records)
     review_records = [
-        record
-        for record in final_records
-        if record["status"] != "usable"
+        record for record in final_records if record["status"] != "usable"
     ]
-    with (out_dir / "review_queue.csv").open("w", newline="", encoding="utf-8") as handle:
+    with (out_dir / "review_queue.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as handle:
         writer = csv.DictWriter(handle, fieldnames=final_fields)
         writer.writeheader()
         writer.writerows(review_records)
 
     (out_dir / "README.md").write_text(
-        "# Phase 7 quality gate and routing\n\n"
+        "# Quality gate and routing\n\n"
         f"Audited {len(rows)} scans across the CDF-assisted and film-only routes. "
-        "Phase 7 reads existing Phase 3--6 JSON sidecars and does not recalibrate or rerender images.\n\n"
+        "The quality gate reads existing structure, calibration, and warp sidecars; it does not recalibrate or rerender images.\n\n"
         "A route is `not_usable` when an upstream stage fails, a required mapping is missing or non-monotonic, an axis extent is invalid, the stored warp artifact disagrees with its mappings, or valid warp coverage is below 80%. A route is `review` when it has structural warnings, weak calibration coverage, fitted anchors that do not land on detected CSA lines/rulings, an upstream review status, large marker residuals, or a fallback height mapping. Missing edge markers are retained as information when the interior mapping remains supported.\n\n"
         "`route_quality_manifest.csv` contains one record per route. `final_routing.csv` selects the best available route for each scan, preferring usable over review and then the quality score; CDF-assisted is the deterministic tie-break. `review_queue.csv` contains final scans that still require inspection. The `final/` directory contains one routing JSON per scan.\n",
         encoding="utf-8",
@@ -744,6 +784,7 @@ def process_manifest(
 
 
 def main():
+    """Parse CLI options and audit calibration routes for usability."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--phase1-manifest", type=Path, default=DEFAULT_PHASE1_MANIFEST)
     parser.add_argument("--structure-dir", type=Path, default=DEFAULT_STRUCTURE_DIR)

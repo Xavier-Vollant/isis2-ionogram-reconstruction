@@ -1,27 +1,9 @@
-"""The one calibrated-ionogram artifact, and the rules it has to obey.
+"""The validated calibrated-ionogram artifact and its file contract.
 
-Three producers in this repository wrote three different arrays under three
-different sets of keys, in two different orientations:
-
-    warp_calibrated_scan.py   warped_intensity/valid_mask/frequency_mhz/virtual_height_km   (height, frequency)
-    standardize_scan.py       warped/freq_axis/v_height                                     (frequency, height)
-    warp_film_to_nasa.py      warped_film/nasa_ampl/freq/v_height                           (frequency, height)
-
-No consumer could read more than one of them. The film-only deployment entry
-point - the script meant for the ~313,000 archive scans with no NASA
-counterpart - produced a file the production amplitude model raised KeyError
-on, and the trace extractor could read neither of the other two.
-
-The orientation split is the dangerous half. A Phase 6 grid is 512x512, so an
-array stored the wrong way round still matches its own axis lengths and still
-resamples to a well-formed 64x96 output. Nothing raises. Shape checking cannot
-catch a square mistake, which is why orientation is a declared field here
-rather than something inferred.
-
-`write` emits only the canonical layout.  `read` remains available for audit
-and migration of the historical layouts, but records their missing guarantees.
-Production consumers use `read_validated`, which refuses every artifact that
-does not meet the canonical contract.
+The canonical artifact stores normalized intensity, a support mask, frequency
+and virtual-height axes, metadata, and the declared `(height, frequency)`
+orientation. Historical layouts can still be read for audit or migration, but
+production consumers use `read_validated` and accept only the canonical form.
 """
 
 from __future__ import annotations
@@ -52,11 +34,11 @@ _LAYOUTS = {
 
 @dataclass
 class Ionogram:
-    """A calibrated scan on a regular frequency x virtual-height grid.
+    """A calibrated scan on a regular frequency-by-virtual-height grid.
 
-    `intensity` is normalized film brightness in [0, 1] laid out as
+    `intensity` is normalized film brightness in [0, 1] with shape
     (height, frequency). Film traces are dark, so signal-positive readers use
-    `1 - intensity`. `valid_mask` is False wherever no film supports the pixel.
+    `1 - intensity`. `valid_mask` is false where the source film has no support.
     """
 
     intensity: np.ndarray
@@ -80,11 +62,12 @@ class Ionogram:
 
     @property
     def coverage(self):
-        """Fraction of grid pixels backed by real film."""
+        """Return the fraction of grid pixels backed by source film."""
         return float(self.valid_mask.mean())
 
 
 def _detect_layout(names):
+    """Identify the intensity-array layout stored in an artifact."""
     present = [key for key in _LAYOUTS if key in names]
     if not present:
         raise KeyError(
@@ -98,7 +81,7 @@ def _detect_layout(names):
 
 
 def _sidecar_meta(path):
-    """Phase 6 wrote its metadata beside the NPZ rather than inside it."""
+    """Read metadata stored beside an older NPZ artifact, if present."""
     sidecar = Path(path).with_suffix(".json")
     if not sidecar.is_file():
         return {}
@@ -110,7 +93,7 @@ def _sidecar_meta(path):
 
 
 def _embedded_meta(data):
-    """Return embedded metadata plus where it came from, without defaults."""
+    """Read embedded metadata and report its source, without adding defaults."""
     if "meta_json" not in data.files:
         return None, "absent"
     try:
@@ -121,17 +104,19 @@ def _embedded_meta(data):
         if isinstance(raw, bytes):
             raw = raw.decode("utf-8")
         if not isinstance(raw, str):
-            raise ValueError("meta_json must contain JSON text")
+            raise TypeError("meta_json must contain JSON text")
         meta = json.loads(raw)
-    except ValueError as error:
+    except (TypeError, ValueError) as error:
         return {"metadata_error": str(error)}, "invalid_embedded"
     if not isinstance(meta, dict):
-        return {"metadata_error": "meta_json must decode to a JSON object"}, "invalid_embedded"
+        return {
+            "metadata_error": "meta_json must decode to a JSON object"
+        }, "invalid_embedded"
     return meta, "embedded"
 
 
 def require_valid(artifact):
-    """Return a conforming artifact or fail before a consumer can use it."""
+    """Read a conforming artifact or raise a validation error."""
     problems = validate(artifact)
     if problems:
         raise ValueError("invalid ionogram artifact: " + "; ".join(problems))
@@ -139,7 +124,7 @@ def require_valid(artifact):
 
 
 def read(path):
-    """Read any historical layout for audit or migration, preserving violations."""
+    """Read a current or historical layout for audit or migration."""
     path = Path(path)
     with np.load(path, allow_pickle=False) as data:
         names = set(data.files)
@@ -178,12 +163,12 @@ def read(path):
 
 
 def read_validated(path):
-    """Read the sole production format, rejecting legacy or invalid artifacts."""
+    """Read the canonical format and reject legacy or invalid artifacts."""
     return require_valid(read(path))
 
 
 def validate(ionogram):
-    """-> list of contract violations, empty when the artifact conforms."""
+    """Return contract violations, or an empty list when valid."""
     problems = []
     intensity = np.asarray(ionogram.intensity)
     valid = np.asarray(ionogram.valid_mask)
@@ -276,7 +261,12 @@ def validate(ionogram):
     declared = meta.get("support")
     if declared and not isinstance(declared, dict):
         problems.append("support must be a dictionary")
-    elif declared and frequency.ndim == height.ndim == 1 and len(frequency) and len(height):
+    elif (
+        declared
+        and frequency.ndim == height.ndim == 1
+        and len(frequency)
+        and len(height)
+    ):
         for name, axis in (("frequency_mhz", frequency), ("virtual_height_km", height)):
             bounds = declared.get(name)
             if bounds and not np.allclose(bounds, [axis[0], axis[-1]], atol=1e-6):
@@ -288,7 +278,7 @@ def validate(ionogram):
 
 
 def write(path, intensity, valid_mask, frequency_mhz, virtual_height_km, **meta):
-    """Validate, then write the canonical layout with its metadata inside it."""
+    """Validate and write the canonical layout with embedded metadata."""
     intensity = np.asarray(intensity, dtype=np.float32)
     valid_mask = np.asarray(valid_mask, dtype=bool)
     frequency_mhz = np.asarray(frequency_mhz, dtype=np.float64)

@@ -1,10 +1,12 @@
+"""Tests for metadata candidate selection and diversity rules."""
+
 import sys
 from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "dataset"))
 
-from build_candidate_matches import (  # noqa: E402
+from build_candidate_matches import (
     SELECTORS,
     quota_caps,
     select_by_reel,

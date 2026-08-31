@@ -1,12 +1,4 @@
-"""NASA topside-sounder telemetry stations.
-
-The NASA pass-header archive encodes station identity in its directory names,
-`ionogram_header_ascii/RES_75N_265E/`, so the directory listing doubles as a
-station reference table with coordinates. Longitudes there run 0-360 E.
-
-Observed 2026-07-31 from
-https://spdf.gsfc.nasa.gov/pub/data/isis/topside_sounder/ionogram_header_ascii/
-"""
+"""Parse station names and coordinates from NASA pass-header directories."""
 
 from __future__ import annotations
 
@@ -41,7 +33,7 @@ STATION_DIRS = (
 
 
 def parse_station_dir(name):
-    """`RES_75N_265E` -> `("RES", 74.7..., -95.0)`, longitude in -180..180."""
+    """Parse a station code, latitude, and longitude from a directory name."""
     code, lat_text, lon_text = name.split("_")
     lat = float(lat_text[:-1]) * (-1 if lat_text[-1] == "S" else 1)
     lon = float(lon_text[:-1]) * (-1 if lon_text[-1] == "W" else 1)
@@ -52,6 +44,7 @@ STATIONS = {code: (lat, lon) for code, lat, lon in map(parse_station_dir, STATIO
 
 
 def separation_km(lat1, lon1, lat2, lon2):
+    """Return the great-circle distance between two coordinates in kilometres."""
     dlat, dlon = radians(lat2 - lat1), radians(lon2 - lon1)
     a = (
         sin(dlat / 2) ** 2
@@ -61,11 +54,10 @@ def separation_km(lat1, lon1, lat2, lon2):
 
 
 def reconcile(code, lat, lon, tolerance_km=400.0):
-    """Check a claimed station code against its claimed coordinates.
+    """Check a station code against its coordinates.
 
-    Returns `(normalized_code, conflict)`. CSA's inventory carries at least one
-    wrong code (Kashima rows are labelled KER, which is Kerguelen), so the
-    coordinates arbitrate rather than the code string.
+    Return `(normalized_code, conflict)`. Coordinates are used when the code
+    and location disagree.
     """
     if lat is None or lon is None:
         return (code if code in STATIONS else ""), (

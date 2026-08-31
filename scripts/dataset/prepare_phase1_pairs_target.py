@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build a larger, diverse Phase 1 pair set without copying scan files."""
+"""Select a larger, diverse pair set without copying scan files."""
 
 from __future__ import annotations
 
@@ -47,7 +47,9 @@ def choose_by_station(rows, target, quotas, randomize=False, seed=0):
                 bucket.sort(key=lambda item: int(item["rank"]))
 
     selected = []
-    for station in sorted(by_station_reel, key=lambda item: (-quotas.get(item, 0), item)):
+    for station in sorted(
+        by_station_reel, key=lambda item: (-quotas.get(item, 0), item)
+    ):
         reels = list(by_station_reel[station])
         if randomize:
             rng.shuffle(reels)
@@ -96,6 +98,7 @@ def assign_splits(rows, existing_reel_splits, seed):
 
 
 def main(argv=None):
+    """Parse CLI options and prepare a fresh pair target."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--candidates",
@@ -129,7 +132,7 @@ def main(argv=None):
         raise SystemExit(f"destination already exists: {args.out}")
 
     if args.fresh_only:
-        # A fresh checkout has no historical Phase 1 set to merge. Reusing
+        # A fresh checkout has no historical pair set to merge. Reusing
         # those files remains supported for incremental batches.
         existing = read_csv(args.existing) if args.existing.is_file() else []
         old_record_rows = read_csv(args.records) if args.records.is_file() else []
@@ -143,9 +146,7 @@ def main(argv=None):
     for used_manifest in args.used_manifest:
         used_rows = read_csv(used_manifest)
         used_names.update(row["pair_name"] for row in used_rows)
-        existing_reel_splits.update(
-            (row["reel"], row["split"]) for row in used_rows
-        )
+        existing_reel_splits.update((row["reel"], row["split"]) for row in used_rows)
 
     csa_dir = ROOT / "data/raw/matches/csa_png"
     cdf_dir = ROOT / "data/raw/matches/nasa_cdf"
@@ -193,7 +194,7 @@ def main(argv=None):
         raise SystemExit(
             f"only {len(selected)} eligible fresh pairs available; need {args.target}"
         )
-    splits, reel_splits = assign_splits(selected, existing_reel_splits, args.seed)
+    splits, _reel_splits = assign_splits(selected, existing_reel_splits, args.seed)
 
     manifest = []
     records = []
@@ -285,7 +286,9 @@ def main(argv=None):
                 "cdf_source": str(cdf_source.relative_to(ROOT)),
                 "csa_link": str(csa_link.relative_to(args.out)),
                 "cdf_link": str(cdf_link.relative_to(args.out)),
-                "selection_source": "random_batch" if args.randomize else "top1500_diverse",
+                "selection_source": "random_batch"
+                if args.randomize
+                else "top1500_diverse",
                 "candidate_rank": row["rank"],
             }
         )
@@ -339,7 +342,9 @@ def main(argv=None):
         writer.writeheader()
         writer.writerows(manifest)
     record_fields = list(records[0])
-    with (args.out / "phase1_records.csv").open("w", newline="", encoding="utf-8") as handle:
+    with (args.out / "phase1_records.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as handle:
         writer = csv.DictWriter(handle, fieldnames=record_fields)
         writer.writeheader()
         writer.writerows(records)
@@ -354,8 +359,8 @@ def main(argv=None):
         "# Target pair set\n\n"
         f"This set contains {len(manifest)} matched CSA/NASA pairs: {len(base_rows)} existing "
         f"pairs plus {len(selected)} fresh candidates. It intentionally includes a buffer "
-        "because the Phase 7 quality gate, not file presence, defines usable warped data.\n\n"
-        "- `manifest.csv` is the input to Phases 3–7.\n"
+        "because the quality gate, not file presence, defines usable warped data.\n\n"
+        "- `manifest.csv` is the input to structure detection, calibration, and quality checks.\n"
         "- `phase1_records.csv` supplies format and sweep metadata to frequency calibration.\n"
         "- `selection.csv` records the fresh-candidate selection and provenance.\n"
         "- `train/` and `held_out/` contain symlinks; raw scans and CDFs are not copied.\n\n"
@@ -366,7 +371,9 @@ def main(argv=None):
     print(f"created {len(manifest)} pairs ({len(selected)} fresh) under {args.out}")
     print(f"split counts: {dict(counts)}")
     print(f"fresh station counts: {dict(Counter(row['station'] for row in selection))}")
-    print(f"fresh landmark sidecars: {sum(row['has_landmark_sidecar'] for row in selection)}/{len(selection)}")
+    print(
+        f"fresh landmark sidecars: {sum(row['has_landmark_sidecar'] for row in selection)}/{len(selection)}"
+    )
 
 
 if __name__ == "__main__":

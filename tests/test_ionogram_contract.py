@@ -92,7 +92,9 @@ def test_metadata_travels_inside_the_artifact(tmp_path):
 def test_support_and_coverage_are_recorded(tmp_path):
     values, valid, frequency, heights = _grid()
     valid[:, :10] = False
-    path = ionogram.write(tmp_path / "a.npz", values, valid, frequency, heights, **_meta())
+    path = ionogram.write(
+        tmp_path / "a.npz", values, valid, frequency, heights, **_meta()
+    )
     meta = ionogram.read(path).meta
     assert meta["support"]["frequency_mhz"] == pytest.approx([0.1, 9.5])
     assert meta["coverage"] == pytest.approx(valid.mean())
@@ -107,9 +109,9 @@ def test_legacy_layouts_are_auditable_but_rejected_in_production(tmp_path, layou
     path = _write_legacy(tmp_path / f"{layout}.npz", layout, values, frequency, heights)
     result = ionogram.read(path)
     assert result.intensity.shape == (len(heights), len(frequency))
-    assert np.allclose(
-        result.intensity, values
-    ), "legacy orientation was not normalized"
+    assert np.allclose(result.intensity, values), (
+        "legacy orientation was not normalized"
+    )
     assert result.meta["source_layout"] in {"warped_intensity", "warped", "warped_film"}
     assert ionogram.validate(result)
     with pytest.raises(ValueError, match="invalid ionogram artifact"):
@@ -195,7 +197,9 @@ def test_missing_embedded_metadata_is_rejected_by_production_reader(tmp_path):
         ionogram.read_validated(path)
 
 
-@pytest.mark.parametrize("field", ("status", "route", "confidence", "source", "provenance"))
+@pytest.mark.parametrize(
+    "field", ("status", "route", "confidence", "source", "provenance")
+)
 def test_required_metadata_is_auditable_but_rejected_in_production(tmp_path, field):
     values, valid, frequency, heights = _grid()
     metadata = _meta()
@@ -236,14 +240,18 @@ def test_missing_mask_is_rejected_by_production_reader(tmp_path):
     )
     result = ionogram.read(path)
     assert result.meta["valid_mask_source"] == "synthesized_absent_in_source_artifact"
-    assert any("valid_mask must be stored" in problem for problem in ionogram.validate(result))
+    assert any(
+        "valid_mask must be stored" in problem for problem in ionogram.validate(result)
+    )
     with pytest.raises(ValueError, match="valid_mask must be stored"):
         ionogram.read_validated(path)
 
 
 def test_signal_occupancy_loader_rejects_a_legacy_artifact(tmp_path):
     values, _, frequency, heights = _grid()
-    path = _write_legacy(tmp_path / "legacy.npz", "standardized", values, frequency, heights)
+    path = _write_legacy(
+        tmp_path / "legacy.npz", "standardized", values, frequency, heights
+    )
     with pytest.raises(ValueError, match="invalid ionogram artifact"):
         load_film(path)
 
@@ -293,7 +301,12 @@ def test_write_refuses_missing_required_metadata(tmp_path):
     values, valid, frequency, heights = _grid()
     with pytest.raises(ValueError, match="confidence"):
         ionogram.write(
-            tmp_path / "a.npz", values, valid, frequency, heights, **_meta(confidence=None)
+            tmp_path / "a.npz",
+            values,
+            valid,
+            frequency,
+            heights,
+            **_meta(confidence=None),
         )
 
 
@@ -325,7 +338,9 @@ def test_partial_frequency_scan_keeps_its_real_support(tmp_path):
 def test_twenty_megahertz_scan_is_representable(tmp_path):
     """The 20 MHz population must not be silently forced onto a 9.5 MHz grid."""
     values, valid, frequency, heights = _grid(frequency_bins=200, freq=(0.1, 20.0))
-    path = ionogram.write(tmp_path / "wide.npz", values, valid, frequency, heights, **_meta())
+    path = ionogram.write(
+        tmp_path / "wide.npz", values, valid, frequency, heights, **_meta()
+    )
     result = ionogram.read(path)
     assert ionogram.validate(result) == []
     assert result.support["frequency_mhz"][1] == pytest.approx(20.0)

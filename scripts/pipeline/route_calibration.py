@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Choose the Phase 2 calibration route for one raw CSA scan.
+"""Choose the calibration route for one raw CSA scan.
 
-This phase only chooses the calibration source.  It does not warp or render
-the image; those operations belong to later phases.
+This command selects the calibration source. It does not warp or render the
+image.
 """
 
 from __future__ import annotations
@@ -12,15 +12,16 @@ import json
 import sys
 from pathlib import Path
 
+import cdflib
 import numpy as np
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
-from isis_research.registration import landmarks  # noqa: E402
+from isis_research.registration import landmarks
 
-try:  # noqa: E402
+try:
     from scripts.dataset.build_calibration_profile import (
         format_class,
         format_key,
@@ -40,6 +41,7 @@ DEFAULT_CDF_DIR = ROOT / "data/raw/matches/nasa_cdf"
 
 
 def read_metadata(path):
+    """Read optional scan metadata, returning an empty mapping when omitted."""
     if path is None:
         return {}
     return json.loads(Path(path).read_text(encoding="utf-8"))
@@ -77,6 +79,41 @@ def resolve_cdf(explicit, metadata, cdf_dir=DEFAULT_CDF_DIR):
     return None, None, None
 
 
+def cdf_validation_error(path):
+    """Return a clear error when a CDF cannot support assisted calibration."""
+    try:
+        cdf = cdflib.CDF(str(path))
+        amplitude = np.asarray(cdf.varget("ampl"))
+        frequency = np.asarray(cdf.varget("freq"), dtype=float).ravel()
+        height = np.asarray(cdf.varget("v_height"), dtype=float).ravel()
+        epoch = np.asarray(cdf.varget("Epoch"), dtype=float).ravel()
+        time_mark = np.asarray(cdf.varget("Time_mark"), dtype=float).ravel()
+        frequency_mark = np.asarray(cdf.varget("freq_mark"), dtype=float).ravel()
+        swept_start = np.asarray(cdf.varget("swept_start"), dtype=float).ravel()
+    except (OSError, KeyError, ValueError, TypeError, IndexError) as error:
+        return f"CDF cannot be read for assisted calibration: {error}"
+
+    if amplitude.ndim != 2:
+        return "CDF amplitude must be a two-dimensional array"
+    if frequency.size != amplitude.shape[0] or height.size != amplitude.shape[1]:
+        return "CDF amplitude shape does not match its frequency and height axes"
+    if frequency.size < 2 or not np.all(np.isfinite(frequency)):
+        return "CDF has too few finite frequency samples"
+    if height.size < 2 or not np.all(np.isfinite(height)):
+        return "CDF has an invalid virtual-height axis"
+    if epoch.size != frequency.size or not np.all(np.isfinite(epoch)):
+        return "CDF Epoch does not match the frequency axis"
+    if time_mark.size != frequency_mark.size:
+        return "CDF marker arrays have different lengths"
+    marker_valid = np.isfinite(time_mark) & (time_mark > -1e30)
+    marker_valid &= np.isfinite(frequency_mark) & (frequency_mark > -1e30)
+    if int(marker_valid.sum()) < 4:
+        return "CDF has fewer than four usable frequency markers"
+    if swept_start.size != 1 or not np.isfinite(swept_start[0]):
+        return "CDF has an invalid swept_start value"
+    return None
+
+
 def _metadata_sweep(metadata):
     value = metadata.get("sweep_class")
     if value in {"sweep_10mhz", "sweep_20mhz", "sweep_unknown"}:
@@ -86,6 +123,7 @@ def _metadata_sweep(metadata):
 
 
 def scan_descriptor(image, metadata):
+    """Summarize image format and sweep metadata for profile selection."""
     height, width = image.shape
     return {
         "width": int(width),
@@ -116,13 +154,13 @@ def candidate_groups(profile, descriptor, metadata):
     else:
         prefix = descriptor["format_class"] + "__"
         for key, group in profile.get("profiles", {}).items():
-            if key.startswith(prefix) and group.get("frequency", {}).get(
-                "frequencies_mhz"
+            if (
+                key.startswith(prefix)
+                and group.get("frequency", {}).get("frequencies_mhz")
+                and group.get("sample_count", 0)
+                >= profile["source"].get("min_profile_samples", 25)
             ):
-                if group.get("sample_count", 0) >= profile["source"].get(
-                    "min_profile_samples", 25
-                ):
-                    groups.append((key, "format_and_sweep_candidate", group))
+                groups.append((key, "format_and_sweep_candidate", group))
     fallback = profile.get("format_fallbacks", {}).get(descriptor["format_class"])
     if fallback and fallback.get("sample_count", 0) >= profile["source"].get(
         "min_fallback_samples", 3
@@ -222,17 +260,21 @@ def route_scan(
         "cdf": str(cdf_path) if cdf_path else None,
     }
     if cdf_path:
-        result.update(
-            {
-                "route": "cdf_assisted",
-                "status": "selected",
-                "confidence": "high",
-                "reason": "matching CDF is available",
-                "cdf_source": cdf_source,
-                "next": "run CDF-assisted landmark calibration",
-            }
-        )
-        return result
+        cdf_error = cdf_validation_error(cdf_path)
+        if cdf_error:
+            cdf_warning = f"referenced CDF is invalid: {cdf_error}"
+        else:
+            result.update(
+                {
+                    "route": "cdf_assisted",
+                    "status": "selected",
+                    "confidence": "high",
+                    "reason": "matching CDF is available",
+                    "cdf_source": cdf_source,
+                    "next": "run CDF-assisted landmark calibration",
+                }
+            )
+            return result
 
     image = np.asarray(Image.open(film_path).convert("L"), dtype=float)
     descriptor = scan_descriptor(image, metadata)
@@ -261,6 +303,7 @@ def route_scan(
 
 
 def main():
+    """Parse CLI options and choose a calibration route for one scan."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--film", required=True, type=Path)
     parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE)

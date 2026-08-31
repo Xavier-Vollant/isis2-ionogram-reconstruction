@@ -1,3 +1,5 @@
+"""Tests for time-budgeted continual-training data splits."""
+
 from pathlib import Path
 
 import numpy as np

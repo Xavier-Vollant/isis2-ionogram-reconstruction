@@ -1,15 +1,10 @@
 #!/usr/bin/env python
-"""Build the CSA master metadata table: one row per scanned ISIS-2 film image.
+"""Build the CSA metadata table, with one row per scanned ISIS-2 image.
 
-Joins the three CSA root inventories on (film subdirectory, image stem):
-
-  result_master_ISIS2.csv  base inventory, one row per PNG
-  microapp_ISIS.csv        subset carrying the max_depth and fmin measurements
-  orbitcheck_isis_2.csv    TLE-propagated satellite geometry per image
-
-Raw values are preserved verbatim alongside normalized ones; every
-normalization that fails is recorded in a status column rather than dropped.
+The builder joins the available CSA inventories and keeps raw values beside
+normalized values. Failed normalizations are recorded instead of dropped.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -17,13 +12,13 @@ import csv
 import re
 import sys
 import urllib.request
-from urllib.parse import quote
 from collections import Counter
 from datetime import date
 from pathlib import Path
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-from isis_research.nasa.stations import STATIONS, reconcile  # noqa: E402
+from isis_research.nasa.stations import STATIONS, reconcile
 
 BASE_URL = (
     "https://donnees-data.asc-csa.gc.ca/users/OpenData_DonneesOuvertes"
@@ -87,6 +82,7 @@ COLUMNS = [
 
 
 def download(refresh=False):
+    """Download the three CSA inventories, reusing cached files by default."""
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     for name in SOURCES:
         target = RAW_DIR / name
@@ -206,6 +202,7 @@ def trust(time_status, visibility):
 
 
 def build():
+    """Join CSA inventories into the normalized master table and audit files."""
     micro = read_microapp(RAW_DIR / "microapp_ISIS.csv")
     print(f"microapp rows indexed:   {len(micro)}")
     orbit = read_orbitcheck(RAW_DIR / "orbitcheck_isis_2.csv")
@@ -350,6 +347,7 @@ def build():
 
 
 def main():
+    """Parse CLI options and build the CSA master inventory."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--refresh", action="store_true", help="re-download the CSA inventories"

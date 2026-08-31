@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
-"""Standardize raw CSA film onto the usable native 512x512 film-only grid.
+"""Standardize raw CSA film onto the usable native 512x512 grid.
 
-NASA is deliberately absent from this command.  The frequency and height
-profile is loaded from the same calibration artifact that produced the usable
-Phase 6 batch, while each input image supplies its own detected film
-boundaries and landmarks.  Files are
-written only for scans classified ``usable`` so the later model cannot
-silently consume a review or metadata-band artifact.
+This command is film-only. It writes files only for scans classified `usable`.
 """
 
 from __future__ import annotations
@@ -22,13 +17,12 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.image_io import load_image  # noqa: E402
-from scripts.pipeline.extract_scan_structure import extract_structure  # noqa: E402
-from scripts.pipeline.fit_frequency_axis import fit_from_profile, load_json  # noqa: E402
-from scripts.pipeline.fit_height_axis import fit_from_profile as fit_height_from_profile  # noqa: E402
-from scripts.pipeline.warp_calibrated_scan import warp_one  # noqa: E402
-
+from isis_research import ionogram
+from isis_research.image_io import load_image
+from scripts.pipeline.extract_scan_structure import extract_structure
+from scripts.pipeline.fit_frequency_axis import fit_from_profile, load_json
+from scripts.pipeline.fit_height_axis import fit_from_profile as fit_height_from_profile
+from scripts.pipeline.warp_calibrated_scan import warp_one
 
 DEFAULT_FILM_DIR = ROOT / "data/raw/matches/csa_png"
 DEFAULT_OUTPUT = ROOT / "outputs/evaluation/phase6_usable_film_only_512_inference"
@@ -39,18 +33,16 @@ DEFAULT_PROFILE = ROOT / "configs/film_calibration_profile.json"
 
 
 def load_profile():
-    """Load the same film-only profile used to create the Phase 6 corpus."""
+    """Load the film-only profile used for the checked-in corpus."""
     return load_json(DEFAULT_PROFILE)
 
 
 def collapse_duplicate_fallback(frequency):
-    """Keep a profile fit usable when its only ambiguity is a duplicate fallback.
+    """Keep a fit usable when its only ambiguity is a duplicate fallback.
 
-    With no metadata, Phase 4 presents the selected format profile and its
-    format fallback as two candidates.  For the calibrated wide and narrow
-    groups those candidates have the same marker positions; treating that
-    bookkeeping duplicate as a real ambiguity downgrades an otherwise exact
-    Phase 6 fit to ``review``.
+    Without metadata, the selected format profile and its fallback can appear
+    as two candidates with identical marker positions. Treating that duplicate
+    as a real ambiguity would downgrade an otherwise exact fit to ``review``.
     """
     selection = frequency.get("profile_selection", {})
     selected = selection.get("selected", {})
@@ -79,16 +71,22 @@ def collapse_duplicate_fallback(frequency):
 
 
 def input_paths(args):
+    """Resolve the single-file, list, or directory input selection."""
     if args.film:
         return [args.film]
     if args.film_list:
-        return [Path(line.strip()) for line in args.film_list.read_text().splitlines() if line.strip()]
+        return [
+            Path(line.strip())
+            for line in args.film_list.read_text().splitlines()
+            if line.strip()
+        ]
     if args.film_dir:
         return sorted(args.film_dir.glob("*.png"))
     raise SystemExit("provide --film, --film-list, or --film-dir")
 
 
 def process(path, profile, output):
+    """Standardize one raw PNG and write it only when the result is usable."""
     image = load_image(path)
     structure = extract_structure(image)
     observed = [item["x"] for item in structure["vertical_markers"]["candidates"]]
@@ -118,7 +116,12 @@ def process(path, profile, output):
     row = {
         "film_file": str(path),
         "status": result["status"],
-        "reason": result.get("reason", ""),
+        "reason": result.get("reason")
+        or (
+            "frequency or height calibration requires review"
+            if result["status"] == "review"
+            else ""
+        ),
         "grid_shape": "512x512",
         "frequency_min_mhz": "",
         "frequency_max_mhz": "",
@@ -126,6 +129,14 @@ def process(path, profile, output):
         "height_max_km": "",
         "coherence": "",
         "detected": "",
+        "valid_coverage": result.get("valid_coverage", ""),
+        "warnings": ";".join(
+            sorted(
+                set(frequency.get("warnings", []))
+                | set(height.get("warnings", []))
+                | set(result.get("warnings", []))
+            )
+        ),
         "artifact": "",
         "frequency_status": frequency.get("status", ""),
         "height_status": height.get("status", ""),
@@ -136,7 +147,7 @@ def process(path, profile, output):
     if result["warped"].shape != GRID_SHAPE:
         raise ValueError(f"{path}: standardizer returned {result['warped'].shape}")
 
-    # Phase 6's warp_array already returns the canonical (height, frequency)
+    # warp_array already returns the canonical (height, frequency)
     # orientation.  Do not transpose here: the square 512x512 shape would
     # hide that mistake while swapping the physical axes.
     brightness = np.asarray(result["warped"], dtype=np.float32)
@@ -171,6 +182,7 @@ def process(path, profile, output):
 
 
 def main():
+    """Parse CLI options and standardize raw film onto the 512 grid."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--film", type=Path)
     parser.add_argument("--film-list", type=Path)
@@ -189,7 +201,7 @@ def main():
     for index, path in enumerate(paths, 1):
         try:
             row = process(path, profile, args.output)
-        except Exception as error:  # one bad scan must not hide the others
+        except Exception as error:  # noqa: BLE001 - one bad scan must not hide the others
             row = {
                 "film_file": str(path),
                 "status": "not_usable",
@@ -201,15 +213,21 @@ def main():
                 "height_max_km": "",
                 "coherence": "",
                 "detected": "",
+                "valid_coverage": "",
+                "warnings": "",
                 "artifact": "",
                 "frequency_status": "",
                 "height_status": "",
                 "structure_status": "",
             }
         rows.append(row)
-        print(f"processed {index}/{len(paths)}: {path.name} [{row['status']}]", flush=True)
+        print(
+            f"processed {index}/{len(paths)}: {path.name} [{row['status']}]", flush=True
+        )
     args.output.mkdir(parents=True, exist_ok=True)
-    with (args.output / "manifest.csv").open("w", newline="", encoding="utf-8") as handle:
+    with (args.output / "manifest.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)

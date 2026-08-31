@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Build and validate the first offline CSA calibration profile.
+"""Build and validate a film-only CSA calibration profile.
 
-The input is the existing CDF-assisted landmark batch.  CDF-derived labels are
-used only to create the profile and score held-out reels; the learned profile
-itself contains scan-format summaries that can later be used without a CDF.
+The profile is learned from a CDF-assisted landmark batch and can then be used
+without a local CDF.
 """
 
 from __future__ import annotations
@@ -28,6 +27,15 @@ WIDTH_SPLIT_PX = 1000
 MIN_PROFILE_SAMPLES = 25
 MIN_FALLBACK_SAMPLES = 3
 MIN_MARKER_SAMPLES = 20
+
+
+def display_path(path):
+    """Prefer a repository-relative path while supporting external outputs."""
+    path = Path(path)
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
 
 
 def read_csv(path):
@@ -89,13 +97,13 @@ def _record_reliability(document, quality, summary_item=None):
     if within_one is None:
         within_one = float_or_none(document.get("selected_trace_within_1bin"))
     if within_one is None:
-        within_one = float_or_none((summary_item or {}).get("selected_trace_within_1bin"))
+        within_one = float_or_none(
+            (summary_item or {}).get("selected_trace_within_1bin")
+        )
     marker_count = int((quality.get("metrics") or {}).get("marker_count", 0))
     if not marker_count:
         marker_count = int(document.get("x_fit", {}).get("count", 0))
-    marker_rms = float_or_none(
-        (quality.get("metrics") or {}).get("marker_rms_px")
-    )
+    marker_rms = float_or_none((quality.get("metrics") or {}).get("marker_rms_px"))
     if marker_rms is None:
         marker_rms = float_or_none(document.get("marker_rms_px"))
     checks = {
@@ -178,7 +186,7 @@ def split_reels(scans, fraction=0.20, seed=0):
         by_reel[scan["reel"]].append(scan)
     reels = sorted(by_reel)
     np.random.default_rng(seed).shuffle(reels)
-    target = max(1, int(round(len(scans) * fraction)))
+    target = max(1, round(len(scans) * fraction))
     held_reels, count = set(), 0
     for reel in reels:
         if count >= target and held_reels:
@@ -214,6 +222,7 @@ def marker_points(document):
 
 
 def build_group(scans):
+    """Aggregate one profile group into robust frequency and height statistics."""
     by_frequency = defaultdict(list)
     ruling_spacing = []
     km_per_ruling = []
@@ -266,13 +275,16 @@ def build_group(scans):
 
 
 def build_profile(train, all_scans):
+    """Aggregate training scans into format and sweep calibration groups."""
     groups = defaultdict(list)
     format_groups = defaultdict(list)
     for scan in train:
         groups[format_key(scan)].append(scan)
         format_groups[scan["format_class"]].append(scan)
     profiles = {key: build_group(value) for key, value in sorted(groups.items())}
-    fallbacks = {key: build_group(value) for key, value in sorted(format_groups.items())}
+    fallbacks = {
+        key: build_group(value) for key, value in sorted(format_groups.items())
+    }
     return {
         "schema": "isis.csa_calibration_profile.v1",
         "source": {
@@ -290,6 +302,7 @@ def build_profile(train, all_scans):
 
 
 def choose_group(profile, scan):
+    """Choose the compatible calibration profile group for one scan."""
     exact = profile["profiles"].get(format_key(scan))
     if exact and exact["sample_count"] >= MIN_PROFILE_SAMPLES:
         return exact, format_key(scan)
@@ -300,16 +313,17 @@ def choose_group(profile, scan):
 
 
 def validate_frequency(scan, group):
+    """Measure how well a profile group's marker axis fits one scan."""
     frequencies = np.asarray(group["frequency"]["frequencies_mhz"], dtype=float)
     positions = np.asarray(group["frequency"]["position_fraction"], dtype=float)
     observed = np.asarray(scan["document"].get("film", {}).get("marker_candidates", []))
     if len(frequencies) < 4 or len(observed) < 4:
         return {"fitted": False}
-    from isis_research.registration.landmarks import fit_marker_axis
+    from isis_research.registration.film import FitFailed, fit_marker_axis
 
     try:
         fit = fit_marker_axis(observed, positions * scan["width"])
-    except Exception:
+    except (FitFailed, IndexError, TypeError, ValueError, np.linalg.LinAlgError):
         return {"fitted": False}
     actual = marker_points(scan["document"])
     actual_by_frequency = {frequency: column for column, frequency in actual}
@@ -342,6 +356,7 @@ def validate_frequency(scan, group):
 
 
 def validate_height(scan, group):
+    """Measure profile height predictions against a scan's ruling labels."""
     document = scan["document"]
     height = group["height"]
     px_per_km = height["px_per_km"]["median"]
@@ -370,7 +385,7 @@ def validate_height(scan, group):
     errors = np.abs(predicted - actual)
     return {
         "fitted": True,
-        "ruling_count": int(len(rows)),
+        "ruling_count": len(rows),
         "predicted_zero_row_px": float(predicted_zero),
         "predicted_px_per_km": float(predicted_px_per_km),
         "actual_zero_error_px": float(abs(predicted_zero - actual_zero)),
@@ -380,6 +395,7 @@ def validate_height(scan, group):
 
 
 def validate(profile, held_out):
+    """Validate profile mappings on held-out scans and return audit records."""
     rows = []
     for scan in held_out:
         group, selected = choose_group(profile, scan)
@@ -394,7 +410,9 @@ def validate(profile, held_out):
                 "height": validate_height(scan, group),
             }
         )
-    frequency = [row["frequency"] for row in rows if row.get("frequency", {}).get("fitted")]
+    frequency = [
+        row["frequency"] for row in rows if row.get("frequency", {}).get("fitted")
+    ]
     height = [row["height"] for row in rows if row.get("height", {}).get("fitted")]
     height_medians = [row["height_error_median_km"] for row in height]
     height_p90s = [row["height_error_p90_km"] for row in height]
@@ -409,7 +427,11 @@ def validate(profile, held_out):
             else None,
             "median_assignment_accuracy": float(
                 np.median(
-                    [row["assignment_accuracy"] for row in frequency if row["assignment_accuracy"] is not None]
+                    [
+                        row["assignment_accuracy"]
+                        for row in frequency
+                        if row["assignment_accuracy"] is not None
+                    ]
                 )
             )
             if any(row["assignment_accuracy"] is not None for row in frequency)
@@ -434,6 +456,7 @@ def validate(profile, held_out):
 
 
 def write_records(path, train, held_out):
+    """Write train and held-out split records for later calibration stages."""
     held_names = {scan["name"] for scan in held_out}
     fields = [
         "name",
@@ -473,6 +496,7 @@ def write_records(path, train, held_out):
 
 
 def main():
+    """Parse CLI options and build the held-out calibration profile."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--batch", type=Path, default=DEFAULT_BATCH)
     parser.add_argument("--pairs", type=Path, default=DEFAULT_PAIRS)
@@ -524,8 +548,8 @@ def main():
         },
         "validation": validation,
         "artifacts": {
-            "profile": str(args.out.relative_to(ROOT)),
-            "records": str(records_path.relative_to(ROOT)),
+            "profile": display_path(args.out),
+            "records": display_path(records_path),
         },
     }
     report_path = (
@@ -539,7 +563,10 @@ def main():
         f"eligible={len(eligible)} train={len(train)} held_out={len(held_out)} "
         f"held_out_reels={len(held_reels)}"
     )
-    print("profile groups: " + ", ".join(f"{k}={v}" for k, v in report["profile_groups"].items()))
+    print(
+        "profile groups: "
+        + ", ".join(f"{k}={v}" for k, v in report["profile_groups"].items())
+    )
     print(
         "frequency validation: "
         f"fit={validation['frequency']['fit_fraction']:.1%}, "
@@ -552,9 +579,9 @@ def main():
         f"median_error={validation['height']['median_error_km']:.1f}km, "
         f"p90_error={validation['height']['p90_error_km']:.1f}km"
     )
-    print(f"wrote {args.out.relative_to(ROOT)}")
-    print(f"wrote {records_path.relative_to(ROOT)}")
-    print(f"wrote {report_path.relative_to(ROOT)}")
+    print(f"wrote {display_path(args.out)}")
+    print(f"wrote {display_path(records_path)}")
+    print(f"wrote {display_path(report_path)}")
 
 
 if __name__ == "__main__":

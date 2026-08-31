@@ -1,3 +1,5 @@
+"""Tests for candidate download validation and Phase 1 freshness checks."""
+
 import csv
 import sys
 from pathlib import Path
@@ -7,7 +9,7 @@ import numpy as np
 DATASET_SCRIPTS = Path(__file__).resolve().parents[1] / "scripts" / "dataset"
 sys.path.insert(0, str(DATASET_SCRIPTS))
 
-import download_candidate_data as downloader  # noqa: E402
+import download_candidate_data as downloader
 
 
 def candidate(predicted="I2_AV_RES_1972003024600"):
@@ -42,10 +44,13 @@ def test_process_downloads_validates_and_writes_review_fields(tmp_path, monkeypa
     monkeypatch.setattr(downloader, "CSA_DIR", tmp_path / "csa")
     monkeypatch.setattr(downloader, "CDF_DIR", tmp_path / "cdf")
     monkeypatch.setattr(downloader, "NASA_PNG", tmp_path / "review" / "nasa_png")
-    monkeypatch.setattr(downloader, "list_day", lambda *_: ["I2_AV_RES_1972003024600_V01.cdf"])
+    monkeypatch.setattr(
+        downloader, "list_day", lambda *_: ["I2_AV_RES_1972003024600_V01.cdf"]
+    )
 
     sample_png = (
-        Path(__file__).resolve().parents[1] / "data/raw/csa_verified_ksh_1972322002235.png"
+        Path(__file__).resolve().parents[1]
+        / "data/raw/csa_verified_bur_1973077231124.png"
     ).read_bytes()
     monkeypatch.setattr(
         downloader,
@@ -64,6 +69,7 @@ def test_process_downloads_validates_and_writes_review_fields(tmp_path, monkeypa
             "shape": (2, 3),
         },
     )
+
     def fake_render(ionogram, path, title):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"review-png")
@@ -91,7 +97,7 @@ def test_process_downloads_validates_and_writes_review_fields(tmp_path, monkeypa
 
 
 def test_fresh_phase1_batch_does_not_require_historical_outputs(tmp_path, monkeypatch):
-    import prepare_phase1_pairs_target as prepare  # noqa: E402
+    import prepare_phase1_pairs_target as prepare
 
     monkeypatch.setattr(prepare, "ROOT", tmp_path)
     csa_dir = tmp_path / "data/raw/matches/csa_png"
@@ -103,9 +109,17 @@ def test_fresh_phase1_batch_does_not_require_historical_outputs(tmp_path, monkey
 
     candidate_path = tmp_path / "candidate.csv"
     fields = [
-        "rank", "nasa_png_file", "csa_file", "csa_size", "cdf_match_kind",
-        "ambiguous", "has_freq_axis", "csa_station", "csa_film_subdir",
-        "signal_fraction", "nasa_swept_freq_range",
+        "rank",
+        "nasa_png_file",
+        "csa_file",
+        "csa_size",
+        "cdf_match_kind",
+        "ambiguous",
+        "has_freq_axis",
+        "csa_station",
+        "csa_film_subdir",
+        "signal_fraction",
+        "nasa_swept_freq_range",
     ]
     with candidate_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)

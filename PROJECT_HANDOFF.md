@@ -1,12 +1,12 @@
 # Project handoff
 
-This file records the current research status. The user-facing commands are
-documented in [`README.md`](README.md) and [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md);
-the technical stages are in [`docs/PIPELINE.md`](docs/PIPELINE.md).
+This page records the current research status. Start with
+[`README.md`](README.md) for commands and [`docs/PIPELINE.md`](docs/PIPELINE.md)
+for the processing stages.
 
 ## Current result
 
-The project demonstrates that a scanned CSA ISIS-2 film ionogram can be:
+The project can:
 
 - standardized and checked for usable film structure;
 - calibrated onto frequency and virtual-height axes;
@@ -14,9 +14,9 @@ The project demonstrates that a scanned CSA ISIS-2 film ionogram can be:
 - passed through the checked-in image models; and
 - exported as a model-derived NASA-CDF-like amplitude file.
 
-The verified KSH example completes this path as `usable`. The first calibration
-stages are deterministic. The amplitude stage uses a checked-in image-model
-checkpoint.
+The verified BUR example completes this path as `usable`. Calibration is
+deterministic for a given scan and profile. The amplitude stage uses a
+checked-in image-model checkpoint.
 
 ## Implemented features
 
@@ -25,7 +25,7 @@ checkpoint.
 - CDF-assisted calibration when a matching reference is available;
 - regular-grid warping with an explicit support mask;
 - validated `isis.ionogram.v1` artifacts;
-- three registered finalist model checkpoints;
+- three registered model checkpoints;
 - one-scan model inference;
 - model-derived CDF-like export with explicit unknown metadata;
 - CSA/NASA catalog construction and candidate matching;
@@ -41,18 +41,17 @@ checkpoint.
 - model evaluation is mainly internal and reel-disjoint; and
 - wider sweep formats and station changes may reduce performance.
 
-Useful next research steps are a small expert-reviewed gold set for marker
-identity, trace geometry, mode identity, and absolute height; calibration-error
+Useful next steps are an expert-reviewed reference set for marker identity,
+trace geometry, mode identity, and absolute height; calibration-error
 measurement before expanding the model; uncertainty and abstention rules; and
 an external reel/station evaluation set.
 
 ## Important limits
 
 A film scan cannot recover satellite orbit, magnetic coordinates, instrument
-mode, or other pass metadata that are absent from the image. NASA-style names
-and CDF structure do not make the generated amplitude measured data or make it
-byte-identical to a NASA CDF. Physical electron-density profiles are outside
-the current scope.
+mode, or other pass metadata absent from the image. NASA-style names and CDF
+structure do not make the generated amplitude measured data or byte-identical
+to a NASA CDF. Electron-density profiles are outside the current scope.
 
 The full CSA/NASA archive, matched manifests, training corpus, and most
 generated reports are external or reproducible outputs rather than checked-in

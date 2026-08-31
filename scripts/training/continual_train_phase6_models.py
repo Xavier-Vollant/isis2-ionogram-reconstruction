@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Train Phase 6 models for a wall-clock budget with usable-data replenishment.
+"""Train models for a wall-clock budget with optional data replenishment.
 
-Each completed pass over the current training pool is one data cycle. When a
-cycle finishes, the existing amplitude batch pipeline can create another
-usable-only batch, which is validated and added to the pool before training
-continues. NASA targets remain labels; they are never model inputs.
+New batches are validated before they join the training pool. NASA targets are
+labels, never model inputs.
 """
 
 from __future__ import annotations
@@ -22,10 +20,10 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.evaluation import splits as evaluation_splits  # noqa: E402
-from isis_research.models import image_features, model_constructor  # noqa: E402
-from scripts.dataset.run_amplitude_batch import next_batch  # noqa: E402
+from isis_research import ionogram
+from isis_research.evaluation import splits as evaluation_splits
+from isis_research.models import image_features, model_constructor
+from scripts.dataset.run_amplitude_batch import next_batch
 
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
@@ -60,6 +58,8 @@ INITIAL_CHECKPOINT_DIRS = {
 
 @dataclass(frozen=True)
 class SampleRef:
+    """Paths and metadata needed to load one training or validation sample."""
+
     corpus: Path
     targets: Path
     row: dict[str, str]
@@ -111,7 +111,11 @@ def usable_rows(
         csa_path = corpus / row["csa_artifact"]
         target_path = targets / target_row["target_artifact"] if target_row else None
         try:
-            if target_path is None or not csa_path.is_file() or not target_path.is_file():
+            if (
+                target_path is None
+                or not csa_path.is_file()
+                or not target_path.is_file()
+            ):
                 raise ValueError("missing artifact")
             scan = ionogram.read_validated(csa_path)
             with np.load(target_path, allow_pickle=False) as data:
@@ -146,7 +150,10 @@ def usable_rows(
             rejected += 1
         if limit is not None and len(accepted) >= limit:
             break
-    print(f"usable pool: {len(accepted)} accepted, {rejected} rejected from {corpus}", flush=True)
+    print(
+        f"usable pool: {len(accepted)} accepted, {rejected} rejected from {corpus}",
+        flush=True,
+    )
     if not accepted:
         raise RuntimeError(f"no usable training pairs found in {corpus}")
     return accepted
@@ -158,10 +165,7 @@ def split_pool(pool: list[SampleRef], fraction: float, seed: int):
         raise ValueError("validation fraction must be in [0, 1)")
     if fraction == 0.0 or len(pool) < 2:
         return pool, []
-    groups = {
-        ref.row.get("reel") or ref.row.get("pair_name")
-        for ref in pool
-    }
+    groups = {ref.row.get("reel") or ref.row.get("pair_name") for ref in pool}
     if len(groups) < 2:
         return pool, []
     folds = min(len(groups), max(2, round(1.0 / fraction)))
@@ -219,6 +223,7 @@ def balanced_refs(pool: list[SampleRef], rng):
 
 
 def load_sample(ref: SampleRef) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Load a sample reference and return signal, target, and valid mask."""
     scan = ionogram.read_validated(ref.corpus / ref.row["csa_artifact"])
     with np.load(ref.targets / ref.target_artifact, allow_pickle=False) as data:
         target = np.asarray(data["amplitude"], dtype=np.float32)
@@ -237,6 +242,7 @@ def make_patches(
     balanced: bool = True,
     deadline: float | None = None,
 ):
+    """Create masked native-resolution patches from a set of references."""
     patches = []
     refs = balanced_refs(pool, rng) if balanced else list(pool)
     if not balanced:
@@ -255,7 +261,9 @@ def make_patches(
                 if patch_mask.any():
                     patches.append(
                         (
-                            features[:, top : top + patch_size, left : left + patch_size],
+                            features[
+                                :, top : top + patch_size, left : left + patch_size
+                            ],
                             target[top : top + patch_size, left : left + patch_size],
                             patch_mask,
                         )
@@ -270,7 +278,9 @@ def model_for(name, torch):
     return model_constructor(model_name)(input_channels), input_channels
 
 
-def load_or_create(name, output_root: Path, initial_root: Path, learning_rate: float, torch):
+def load_or_create(
+    name, output_root: Path, initial_root: Path, learning_rate: float, torch
+):
     output = output_root / name
     output.mkdir(parents=True, exist_ok=True)
     checkpoint_path = output / "model.pt"
@@ -297,7 +307,9 @@ def load_or_create(name, output_root: Path, initial_root: Path, learning_rate: f
         initial_path = initial_root / INITIAL_CHECKPOINT_DIRS[name] / "model.pt"
         if initial_path.is_file():
             checkpoint = torch.load(initial_path, map_location="cpu")
-            if checkpoint.get("model") != name and not (name == "unet" and checkpoint.get("model") == "unet"):
+            if checkpoint.get("model") != name and not (
+                name == "unet" and checkpoint.get("model") == "unet"
+            ):
                 raise ValueError(f"initial checkpoint model mismatch: {initial_path}")
             model.load_state_dict(checkpoint["state_dict"])
             print(f"initialized {name} from {initial_path}", flush=True)
@@ -336,8 +348,11 @@ def save_checkpoint(
     )
 
 
-def train_epoch(name, model, optimizer, input_channels, pool, args, rng, deadline, torch):
-    import torch.nn.functional as functional
+def train_epoch(
+    name, model, optimizer, input_channels, pool, args, rng, deadline, torch
+):
+    """Run one masked training cycle and return completion, losses, and steps."""
+    from torch.nn import functional
 
     patches, patches_complete = make_patches(
         pool,
@@ -368,7 +383,10 @@ def train_epoch(name, model, optimizer, input_channels, pool, args, rng, deadlin
         losses.append(float(loss.detach()))
         steps += 1
     mean_loss = float(np.mean(losses)) if losses else float("nan")
-    print(f"{name}: completed pass over {len(pool)} scans, loss={mean_loss:.6f}", flush=True)
+    print(
+        f"{name}: completed pass over {len(pool)} scans, loss={mean_loss:.6f}",
+        flush=True,
+    )
     return patches_complete, losses, steps
 
 
@@ -379,6 +397,7 @@ def correlation(prediction, target):
 
 
 def validate_model(model, input_channels, validation, args, deadline, torch):
+    """Evaluate a model on validation references using macro image metrics."""
     if not validation:
         return None
     model.eval()
@@ -393,7 +412,9 @@ def validate_model(model, input_channels, validation, args, deadline, torch):
             output = torch.sigmoid(
                 model(
                     torch.from_numpy(
-                        np.stack([image_features(film, input_channels) for film in films])
+                        np.stack(
+                            [image_features(film, input_channels) for film in films]
+                        )
                     )
                 )
             ).numpy()
@@ -443,9 +464,14 @@ def replenish(args, batch_id: int, deadline: float):
     batch_root = args.batch_root / f"batch_{batch_id:04d}"
     env = None
     timeout = max(1.0, remaining - 5.0)
-    candidates = args.candidate or sorted((ROOT / "data/processed").glob("review_ranked*.csv"))
+    candidates = args.candidate or sorted(
+        (ROOT / "data/processed").glob("review_ranked*.csv")
+    )
     if not [path for path in candidates if path.is_file()]:
-        print("no candidate CSVs available; continuing with the validated pool", flush=True)
+        print(
+            "no candidate CSVs available; continuing with the validated pool",
+            flush=True,
+        )
         return (None, None)
     command = [
         sys.executable,
@@ -506,7 +532,10 @@ def replenish(args, batch_id: int, deadline: float):
             timeout=max(1.0, deadline - time.monotonic() - 3.0),
         )
     except subprocess.TimeoutExpired:
-        print("replenishment preparation timed out before the training deadline", flush=True)
+        print(
+            "replenishment preparation timed out before the training deadline",
+            flush=True,
+        )
         return None
     return corpus, targets
 
@@ -525,9 +554,17 @@ def existing_replenished(args):
 def parse_duration(args):
     values = [args.duration_hours, args.duration_minutes, args.duration_seconds]
     if sum(value is not None for value in values) != 1:
-        raise SystemExit("provide exactly one of --duration-hours, --duration-minutes, or --duration-seconds")
+        raise SystemExit(
+            "provide exactly one of --duration-hours, --duration-minutes, or --duration-seconds"
+        )
     value = next(value for value in values if value is not None)
-    multiplier = 3600 if args.duration_hours is not None else 60 if args.duration_minutes is not None else 1
+    multiplier = (
+        3600
+        if args.duration_hours is not None
+        else 60
+        if args.duration_minutes is not None
+        else 1
+    )
     seconds = float(value) * multiplier
     if seconds <= 0:
         raise SystemExit("duration must be positive")
@@ -535,6 +572,7 @@ def parse_duration(args):
 
 
 def main():
+    """Parse CLI options and continue training within the wall-clock budget."""
     parser = argparse.ArgumentParser(description=__doc__)
     duration = parser.add_mutually_exclusive_group(required=True)
     duration.add_argument("--duration-hours", type=float)
@@ -545,14 +583,18 @@ def main():
         nargs="+",
         choices=(*MODEL_SPECS, "all"),
         default=["all"],
-        help="model names, or all (the default)",
+        help="model names to train, or all models by default",
     )
     parser.add_argument("--corpus", type=Path, action="append")
     parser.add_argument("--targets", type=Path, action="append")
     parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--initial-root", type=Path, default=DEFAULT_INITIAL_ROOT)
     parser.add_argument("--batch-root", type=Path, default=DEFAULT_BATCH_ROOT)
-    parser.add_argument("--replenished-root", type=Path, default=ROOT / "outputs/evaluation/phase6_continual_data")
+    parser.add_argument(
+        "--replenished-root",
+        type=Path,
+        default=ROOT / "outputs/evaluation/phase6_continual_data",
+    )
     parser.add_argument("--base-manifest", type=Path, default=DEFAULT_BASE_MANIFEST)
     parser.add_argument("--base-records", type=Path, default=DEFAULT_BASE_RECORDS)
     parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE)
@@ -568,14 +610,14 @@ def main():
         "--patience-cycles",
         type=int,
         default=5,
-        help="stop after this many validation cycles without any model improving; 0 disables",
+        help="stop after this many validation cycles without improvement; 0 disables",
     )
     parser.add_argument("--min-replenish-seconds", type=float, default=60.0)
     parser.add_argument(
         "--no-balanced-sampling",
         dest="balanced_sampling",
         action="store_false",
-        help="sample every training scan once per epoch instead of balancing buckets",
+        help="visit each training scan once per epoch instead of balancing buckets",
     )
     parser.add_argument("--learning-rate", type=float, default=5e-4)
     parser.add_argument("--seed", type=int, default=20260818)
@@ -598,7 +640,9 @@ def main():
         or args.min_replenish_seconds < 0
         or not 0.0 <= args.validation_fraction < 1.0
     ):
-        raise SystemExit("training, validation, and replenishment parameters are invalid")
+        raise SystemExit(
+            "training, validation, and replenishment parameters are invalid"
+        )
     if bool(args.corpus) != bool(args.targets):
         raise SystemExit("--corpus and --targets must be supplied together")
     if args.corpus:
@@ -609,7 +653,9 @@ def main():
         corpora, targets = zip(*pairs)
         corpora, targets = list(corpora), list(targets)
     if len(corpora) != len(targets):
-        raise SystemExit("--corpus and --targets must be supplied the same number of times")
+        raise SystemExit(
+            "--corpus and --targets must be supplied the same number of times"
+        )
 
     group_rows = read_group_rows(args.base_manifest)
     pool = []
@@ -661,7 +707,9 @@ def main():
                 input_channels,
                 train_pool,
                 args,
-                np.random.default_rng(args.seed + cycle * 1000 + args.models.index(name)),
+                np.random.default_rng(
+                    args.seed + cycle * 1000 + args.models.index(name)
+                ),
                 deadline,
                 torch,
             )
@@ -670,7 +718,8 @@ def main():
                     "cycles": cycle,
                     "epochs": int(state.get("epochs", 0)) + int(complete),
                     "steps": int(state.get("steps", 0)) + steps,
-                    "elapsed_seconds": elapsed_bases[name] + (time.monotonic() - run_started),
+                    "elapsed_seconds": elapsed_bases[name]
+                    + (time.monotonic() - run_started),
                     "last_loss": float(np.mean(losses)) if losses else None,
                 }
             )
@@ -720,9 +769,9 @@ def main():
                         flush=True,
                     )
                 else:
-                    state["validation_no_improvement"] = int(
-                        state.get("validation_no_improvement", 0)
-                    ) + 1
+                    state["validation_no_improvement"] = (
+                        int(state.get("validation_no_improvement", 0)) + 1
+                    )
                 save_checkpoint(
                     name,
                     model,
@@ -740,7 +789,10 @@ def main():
                 >= args.patience_cycles
                 for name in args.models
             ):
-                print("stopping: no model improved on validation within patience", flush=True)
+                print(
+                    "stopping: no model improved on validation within patience",
+                    flush=True,
+                )
                 break
         if args.no_replenish:
             print("pool exhausted; --no-replenish requested, stopping", flush=True)
@@ -761,7 +813,10 @@ def main():
             f"validation scans={len(validation)}",
             flush=True,
         )
-    print(f"finished after {seconds - max(0.0, deadline - time.monotonic()):.1f}s and {cycle} cycles", flush=True)
+    print(
+        f"finished after {seconds - max(0.0, deadline - time.monotonic()):.1f}s and {cycle} cycles",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
