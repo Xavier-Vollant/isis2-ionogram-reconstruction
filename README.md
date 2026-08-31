@@ -60,6 +60,28 @@ outputs/example/
 mask views when `--diagnostics` is used. The amplitude remains a model
 prediction, not a measured NASA observation.
 
+## Visual example
+
+Here is the BUR scan used in the quick-start example at a few points in the
+pipeline.
+
+![Original scanned BUR ionogram](data/raw/csa_verified_bur_1973077231124.png)
+
+*The original CSA scan, before calibration.*
+
+![Detected structure in the BUR scan](docs/assets/bur-structure-detection.png)
+
+*The structure pass finds the film area, frequency markers, and ruling lines.*
+
+![Calibrated BUR ionogram](docs/assets/bur-calibration.png)
+
+*The calibrated result is shown on frequency and virtual-height axes.*
+
+![NASA reference, model output, and absolute error](docs/assets/bur-model-comparison.png)
+
+*The notebook comparison shows a NASA reference beside one model output and
+the absolute error. The model image is an estimate, not a measured NASA value.*
+
 ## Read next
 
 - [Understand the project](docs/OVERVIEW.md)
