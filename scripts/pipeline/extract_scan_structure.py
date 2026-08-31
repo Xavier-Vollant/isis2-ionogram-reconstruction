@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Extract Phase 3 structure from raw CSA scans.
+"""Detect structure in raw CSA scans.
 
-This script detects image structure only.  It does not assign frequencies or
-virtual heights, and it never reads a CDF.
+This command finds film boundaries and candidates. It does not assign physical
+axes or read a CDF.
 """
 
 from __future__ import annotations
@@ -16,19 +16,20 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-from PIL import Image  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
-from isis_research.registration import film, landmarks  # noqa: E402
+from isis_research.registration import film, landmarks
 
 DEFAULT_MANIFEST = ROOT / "outputs/calibration/phase1_pairs/manifest.csv"
 DEFAULT_OUT = ROOT / "outputs/calibration/phase3_structure"
 
 
 def normalize(image):
+    """Scale an image to display range and report its robust contrast."""
     image = np.asarray(image, dtype=float)
     finite = np.isfinite(image)
     if not finite.any():
@@ -75,7 +76,10 @@ def _warnings(image, top, bottom, markers, candidates, lattice, normalization):
         support = [item["support_fraction"] for item in candidates]
         if float(np.median(support)) < 0.5:
             warnings.append("weak_horizontal_support")
-    if markers and (min(item["x"] for item in markers) < 2 or max(item["x"] for item in markers) > width - 3):
+    if markers and (
+        min(item["x"] for item in markers) < 2
+        or max(item["x"] for item in markers) > width - 3
+    ):
         warnings.append("marker_candidate_near_image_edge")
     rows = np.asarray(lattice.get("rows", []), dtype=float)
     if len(rows) >= 4:
@@ -87,7 +91,7 @@ def _warnings(image, top, bottom, markers, candidates, lattice, normalization):
 
 
 def extract_structure(image, marker_sigma=2.0, ruling_sigma=2.0):
-    """Return the Phase 3 structure record for one grayscale image."""
+    """Return the structure record for one grayscale image."""
     image = np.asarray(image, dtype=float)
     if image.ndim != 2 or not image.size:
         raise ValueError("expected a non-empty 2-D grayscale image")
@@ -173,7 +177,9 @@ def write_overlay(path, image, structure, title):
     for row in structure["horizontal_rulings"]["lattice"].get("rows", []):
         axis.axhline(row, color="#d81b60", linewidth=1.2, linestyle="--")
     warnings = ", ".join(structure["warnings"]) or "none"
-    axis.set_title(f"{title} — {structure['status']} — warnings: {warnings}", fontsize=8)
+    axis.set_title(
+        f"{title} — {structure['status']} — warnings: {warnings}", fontsize=8
+    )
     axis.set_xlabel("film column (candidate frequency markers only)")
     axis.set_ylabel("film row (candidate rulings only)")
     axis.set_xlim(0, image.shape[1] - 1)
@@ -184,6 +190,7 @@ def write_overlay(path, image, structure, title):
 
 
 def process_one(film_path, json_path, plot_path, marker_sigma, ruling_sigma, title):
+    """Extract one scan, save its JSON record, and write an overlay plot."""
     image = np.asarray(Image.open(film_path).convert("L"), dtype=float)
     structure = extract_structure(image, marker_sigma, ruling_sigma)
     plot_structure = dict(structure)
@@ -202,6 +209,7 @@ def process_manifest(
     limit=None,
     write_plots=True,
 ):
+    """Run structure extraction for scans listed in a pair manifest."""
     manifest_path = Path(manifest_path)
     out_dir = Path(out_dir)
     structure_dir = out_dir / "json"
@@ -240,9 +248,15 @@ def process_manifest(
                 "status": structure["status"],
                 "warnings": ";".join(structure["warnings"]),
                 "marker_count": structure["vertical_markers"]["count"],
-                "horizontal_candidate_count": structure["horizontal_rulings"]["candidate_count"],
-                "lattice_count": structure["horizontal_rulings"]["lattice"].get("count", 0),
-                "lattice_spacing_px": structure["horizontal_rulings"]["lattice"].get("spacing_px"),
+                "horizontal_candidate_count": structure["horizontal_rulings"][
+                    "candidate_count"
+                ],
+                "lattice_count": structure["horizontal_rulings"]["lattice"].get(
+                    "count", 0
+                ),
+                "lattice_spacing_px": structure["horizontal_rulings"]["lattice"].get(
+                    "spacing_px"
+                ),
             }
         )
         print(
@@ -256,7 +270,7 @@ def process_manifest(
         writer.writeheader()
         writer.writerows(records)
     (out_dir / "README.md").write_text(
-        "# Phase 3 scan structure\n\n"
+        "# Scan structure\n\n"
         f"Structure extraction for {len(records)} raw CSA scans.\n\n"
         "The JSON contains candidate film boundaries, vertical marker lines, "
         "horizontal ruling candidates, a ruling lattice, and warnings. No "
@@ -268,6 +282,7 @@ def process_manifest(
 
 
 def main():
+    """Parse CLI options and extract candidate structure from scan images."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--film", type=Path, default=None)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
@@ -304,7 +319,9 @@ def main():
         counts = {}
         for record in records:
             counts[record["status"]] = counts.get(record["status"], 0) + 1
-        print("status counts: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items())))
+        print(
+            "status counts: " + ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+        )
         print(f"wrote {args.out_dir / 'manifest.csv'}")
 
 

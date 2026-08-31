@@ -1,1 +1,1 @@
-"""Future validation, uncertainty, and quality-control methods."""
+"""Helpers for held-out evaluation and uncertainty summaries."""

@@ -1,16 +1,13 @@
 #!/usr/bin/env python3
-"""Evaluate a native CSA-to-NASA image translator on held-out usable scans.
+"""Evaluate a CSA-to-NASA image model on held-out usable scans.
 
-The direct target is the matched NASA image.  Trace scores are a secondary
-diagnostic: the same ridge/continuity extractor is run on the NASA target and
-on each candidate image after a common 64x96 evaluation resampling.  NASA is
-therefore a held-out reference, never an inference input.
+NASA images are targets for scoring, never inputs to inference. Trace scores
+are a secondary diagnostic after common-grid resampling.
 """
 
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import sys
 import warnings
@@ -21,20 +18,20 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.extraction import echo  # noqa: E402
-from scripts.evaluation.benchmark_phase6_512_image_baselines import (  # noqa: E402
-    metric as image_metric,
-    predictions as baseline_predictions,
-)
-from isis_research.grids import (  # noqa: E402
-    TARGET_FREQUENCY,
+from isis_research import ionogram
+from isis_research.extraction import echo
+from isis_research.grids import (
     TARGET_HEIGHT,
     resample_grid,
 )
-from isis_research.models import image_features, model_constructor  # noqa: E402
-from scripts.training.train_phase6_512_image_model import load_sample, rows_for  # noqa: E402
-
+from isis_research.models import image_features, model_constructor
+from scripts.evaluation.benchmark_phase6_512_image_baselines import (
+    metric as image_metric,
+)
+from scripts.evaluation.benchmark_phase6_512_image_baselines import (
+    predictions as baseline_predictions,
+)
+from scripts.training.train_phase6_512_image_model import load_sample, rows_for
 
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
@@ -60,6 +57,7 @@ def trace_reference(image, valid):
 
 
 def trace_candidate(image):
+    """Extract candidate echo paths on the common evaluation grid."""
     keep = TARGET_HEIGHT <= MAX_HEIGHT_KM
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)
@@ -71,9 +69,12 @@ def trace_candidate(image):
 
 
 def path_metric(candidate, reference, height):
+    """Measure candidate echo-path coverage and height error."""
     candidate_path, candidate_score = candidate
     reference_path, reference_score = reference
-    reference_detected = np.isfinite(reference_score) & (reference_score >= TRACE_THRESHOLD)
+    reference_detected = np.isfinite(reference_score) & (
+        reference_score >= TRACE_THRESHOLD
+    )
     candidate_detected = np.isfinite(candidate_score)
     common = reference_detected & candidate_detected
     if not reference_detected.any():
@@ -101,6 +102,7 @@ def path_metric(candidate, reference, height):
 
 
 def summarize(items, field):
+    """Summarize one comparable metric across held-out scans."""
     values = [item[field] for item in items if item.get("comparable") and field in item]
     if not values:
         return {"scans": 0}
@@ -164,6 +166,7 @@ def stratified_trace_summary(records, field):
 
 
 def load_model(checkpoint_path, torch):
+    """Load a stored architecture and its weights for evaluation."""
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
     model_name = checkpoint.get("model")
     model = model_constructor(model_name)(checkpoint.get("input_channels", 1))
@@ -173,6 +176,7 @@ def load_model(checkpoint_path, torch):
 
 
 def main():
+    """Parse CLI options and evaluate one image model on held-out pairs."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--targets", type=Path, default=DEFAULT_TARGETS)
@@ -206,11 +210,14 @@ def main():
     train_mean = train_total / max(train_pixels, 1)
 
     image_results = {}
-    trace_results = {name: {f"trace_{i + 1}": [] for i in range(TRACES)} for name in (
-        "model",
-        "inverted_film",
-        "blurred_inverted_film",
-    )}
+    trace_results = {
+        name: {f"trace_{i + 1}": [] for i in range(TRACES)}
+        for name in (
+            "model",
+            "inverted_film",
+            "blurred_inverted_film",
+        )
+    }
     all_image_metrics = {name: [] for name in trace_results}
     image_records = {name: [] for name in trace_results}
     trace_records = {
@@ -220,19 +227,33 @@ def main():
 
     for start in range(0, len(held_out), args.batch_size):
         batch_rows = held_out[start : start + args.batch_size]
-        samples = [load_sample(args.corpus, args.targets, row, target_rows) for row in batch_rows]
-        films, targets, masks = zip(*samples)
+        samples = [
+            load_sample(args.corpus, args.targets, row, target_rows)
+            for row in batch_rows
+        ]
+        films, _targets, _masks = zip(*samples)
         with torch.no_grad():
             model_output = torch.sigmoid(
                 model(
                     torch.from_numpy(
-                        np.stack([image_features(film, checkpoint.get("input_channels", 1)) for film in films])
+                        np.stack(
+                            [
+                                image_features(
+                                    film, checkpoint.get("input_channels", 1)
+                                )
+                                for film in films
+                            ]
+                        )
                     )
                 )
             ).numpy()
-        for row, (film, target, mask), prediction in zip(batch_rows, samples, model_output):
+        for row, (film, target, mask), prediction in zip(
+            batch_rows, samples, model_output
+        ):
             scan = ionogram.read_validated(args.corpus / row["csa_artifact"])
-            candidates = baseline_predictions(scan.intensity, scan.valid_mask, train_mean)
+            candidates = baseline_predictions(
+                scan.intensity, scan.valid_mask, train_mean
+            )
             candidates["model"] = prediction.astype(np.float32)
             coverage = float(mask.mean())
             strata = {
@@ -248,7 +269,9 @@ def main():
                         np.std(candidate[mask]) / max(np.std(target[mask]), 1e-9)
                     )
                 all_image_metrics.setdefault(name, []).append(metrics)
-                image_records.setdefault(name, []).append({**strata, "metrics": metrics})
+                image_records.setdefault(name, []).append(
+                    {**strata, "metrics": metrics}
+                )
 
             # Trace metrics use one common, inexpensive 64x96 representation.
             target_small = resample_grid(
@@ -256,7 +279,10 @@ def main():
             ).astype(np.float32)
             target_valid_small = (
                 resample_grid(
-                    mask.astype(float), scan.virtual_height_km, scan.frequency_mhz, fill_value=0.0
+                    mask.astype(float),
+                    scan.virtual_height_km,
+                    scan.frequency_mhz,
+                    fill_value=0.0,
                 )
                 > 0.5
             )
@@ -277,11 +303,16 @@ def main():
                     )
                     trace_name = f"trace_{index + 1}"
                     trace_results[name][trace_name].append(metrics)
-                    trace_records[name][trace_name].append({**strata, "metrics": metrics})
+                    trace_records[name][trace_name].append(
+                        {**strata, "metrics": metrics}
+                    )
             all_names.append(row["pair_name"])
         count = min(start + args.batch_size, len(held_out))
         if count == args.batch_size or count % 100 == 0 or count == len(held_out):
-            print(f"evaluated {count}/{len(held_out)}: {batch_rows[-1]['pair_name']}", flush=True)
+            print(
+                f"evaluated {count}/{len(held_out)}: {batch_rows[-1]['pair_name']}",
+                flush=True,
+            )
 
     for name, metrics in all_image_metrics.items():
         image_results[name] = image_summary(metrics)
@@ -327,14 +358,18 @@ def main():
             }
             for name, traces in trace_records.items()
         },
-        "model_beats_blurred_baseline_correlation": image_results["model"]["macro_correlation"]
+        "model_beats_blurred_baseline_correlation": image_results["model"][
+            "macro_correlation"
+        ]
         > image_results["blurred_inverted_film"]["macro_correlation"],
         "model_beats_blurred_baseline_mae": image_results["model"]["macro_mae"]
         < image_results["blurred_inverted_film"]["macro_mae"],
         "pair_names": all_names,
     }
     args.output.mkdir(parents=True, exist_ok=True)
-    (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (args.output / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report, indent=2), flush=True)
 
 

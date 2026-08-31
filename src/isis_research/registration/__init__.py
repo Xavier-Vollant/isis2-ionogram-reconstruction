@@ -1,1 +1,1 @@
-"""Future image and coordinate-registration methods."""
+"""Geometry, landmark, and calibration tools for scanned ionograms."""

@@ -1,13 +1,14 @@
-"""Detect physical landmarks shared by a NASA CDF and CSA scan.
+"""Detect landmarks shared by a NASA CDF and a CSA scan.
 
-The CDF supplies the coordinates of frequency markers, the sweep start, and
-the sampled height bounds. The scan supplies the matching printed lines and
-the exposed ionogram edges. This module does not warp either image.
+The CDF supplies frequency-marker times, the sweep start, and height bounds.
+The scan supplies matching printed lines and exposed ionogram edges. This
+module finds and labels landmarks; it does not warp either image.
 """
 
 from __future__ import annotations
 
 import math
+from itertools import pairwise
 
 import numpy as np
 from scipy.ndimage import median_filter
@@ -21,14 +22,7 @@ def _finite(values):
 
 
 def resolve_sweep_start(frequency, stored_start, sample_tolerance=0.02):
-    """Return the first sample of the swept frequency, not the fixed prefix.
-
-    NASA sometimes stores ``swept_start`` as the first column of the record
-    (or a later 1 MHz column).  The frequency vector is the more direct
-    evidence: the sweep starts at its first low-frequency sample, normally
-    0.1 MHz.  The stored value remains in the result so bad archive metadata
-    is visible to the batch quality gate.
-    """
+    """Return the first sample of the swept frequency."""
     frequency = np.asarray(frequency, dtype=float).ravel()
     valid = np.isfinite(frequency) & (frequency > 0) & (frequency < 1e6)
     stored = int(np.clip(int(np.asarray(stored_start)), 0, max(len(frequency) - 1, 0)))
@@ -79,7 +73,7 @@ def resolve_sweep_start(frequency, stored_start, sample_tolerance=0.02):
 
 
 def nearest_columns(epoch, times):
-    """Return the CDF scan-line nearest to each NASA marker time."""
+    """Return the CDF column nearest to each marker time."""
     epoch = np.asarray(epoch, dtype=float).ravel()
     # NASA marker times are relative to the first epoch while CDF Epoch is an
     # absolute TT2000 value.
@@ -90,7 +84,7 @@ def nearest_columns(epoch, times):
 
 
 def nasa_features(amplitude, epoch, time_mark, freq_mark, swept_start, frequency=None):
-    """Return only coordinates explicitly present in the CDF."""
+    """Return coordinates explicitly present in the CDF."""
     amplitude = np.asarray(amplitude)
     epoch = np.asarray(epoch, dtype=float).ravel()
     time_mark = np.asarray(time_mark, dtype=float).ravel()
@@ -132,7 +126,7 @@ def nasa_features(amplitude, epoch, time_mark, freq_mark, swept_start, frequency
 
 
 def detect_film_features(image, marker_sigma=2.0):
-    """Detect CSA marker lines and the exposed ionogram edges."""
+    """Detect CSA marker lines and exposed ionogram edges."""
     image = np.asarray(image, dtype=float)
     top, bottom_exclusive = film.film_regions(image)
     markers = film.find_dark_lines(
@@ -148,7 +142,7 @@ def detect_film_features(image, marker_sigma=2.0):
 
 
 def _profile_candidates(response, valid, sigma, merge):
-    """Return strong, grouped one-dimensional profile features."""
+    """Return strong, grouped features from a one-dimensional profile."""
     valid = np.asarray(valid, dtype=bool)
     scale = float(np.std(response[valid])) if np.any(valid) else 0.0
     scale = max(scale, 1e-9)
@@ -177,7 +171,7 @@ def _profile_candidates(response, valid, sigma, merge):
 def detect_nasa_horizontal_rows(
     amplitude, v_height, min_height=500.0, max_height=2500.0, sigma=4.0, max_rows=5
 ):
-    """Find strong horizontal rows that are actually visible in the CDF."""
+    """Find strong horizontal rows visible in the CDF."""
     profile = np.mean(np.asarray(amplitude, dtype=float), axis=0)
     highpass = profile - median_filter(profile, size=31, mode="nearest")
     valid = np.isfinite(v_height) & (v_height >= min_height) & (v_height <= max_height)
@@ -222,7 +216,7 @@ def detect_nasa_middle_marking(amplitude, v_height):
 
 
 def detect_csa_horizontal_candidates(image, top, bottom, x_start, x_end, sigma=2.0):
-    """Find possible CSA horizontal lines in the frequency-marker interval."""
+    """Find possible CSA horizontal lines between frequency markers."""
     image = np.asarray(image, dtype=float)
     top, bottom = int(top), int(bottom)
     x_start = int(np.clip(x_start, 0, image.shape[1] - 1))
@@ -236,7 +230,7 @@ def detect_csa_horizontal_candidates(image, top, bottom, x_start, x_end, sigma=2
     for candidate in candidates:
         row = int(candidate["peak_row"])
         segment_scores = []
-        for left, right in zip(segments[:-1], segments[1:]):
+        for left, right in pairwise(segments):
             segment_profile = image[top:bottom, left:right].mean(axis=1)
             segment_highpass = segment_profile - median_filter(
                 segment_profile, size=41, mode="nearest"
@@ -257,7 +251,7 @@ def detect_csa_horizontal_candidates(image, top, bottom, x_start, x_end, sigma=2
 
 
 def fit_csa_ruling_lattice(candidates, top, bottom):
-    """Summarize the regularly spaced CSA ruling candidates."""
+    """Summarize regularly spaced CSA ruling candidates."""
     rows = sorted(
         float(candidate["csa_row"])
         for candidate in candidates
@@ -289,7 +283,7 @@ def fit_csa_ruling_lattice(candidates, top, bottom):
 def label_csa_rulings(
     candidates, lattice, nasa_rows, zero_row, px_per_km, height_step_km
 ):
-    """Attach NASA heights to CSA rulings only when all checks agree."""
+    """Attach NASA heights to CSA rulings when the checks agree."""
     lattice_rows = np.asarray(lattice.get("rows", []), dtype=float)
     nasa_rows = list(nasa_rows)
     tolerance = max(2.0 * float(height_step_km), 30.0)
@@ -367,7 +361,7 @@ def label_csa_rulings(
 
 
 def select_ruling_review_targets(labels, count=3):
-    """Choose weak candidates near low, middle, and high lattice positions."""
+    """Choose review candidates near low, middle, and high lattice positions."""
     candidates = [
         item for item in labels if item["status"] == "relative_ruling_candidate"
     ]
@@ -378,7 +372,7 @@ def select_ruling_review_targets(labels, count=3):
     selected = []
     used = set()
     for position in positions:
-        index = int(round(float(position)))
+        index = round(float(position))
         item = candidates[index]
         if item["csa_row"] in used:
             continue
@@ -386,7 +380,9 @@ def select_ruling_review_targets(labels, count=3):
         target["review_priority"] = (
             "low"
             if position == positions[0]
-            else "high" if position == positions[-1] else "middle"
+            else "high"
+            if position == positions[-1]
+            else "middle"
         )
         selected.append(target)
         used.add(item["csa_row"])
@@ -406,23 +402,14 @@ _ROW_CLASSES = {"top_of_ionogram": 4, "bottom_of_ionogram": 5}
 
 
 def _band(center, halfwidth, limit):
-    center = int(round(float(center)))
+    center = round(float(center))
     return max(0, center - halfwidth), min(int(limit) - 1, center + halfwidth)
 
 
 def build_ml_labels(result, image_shape, halfwidth=1):
-    """-> every located CSA landmark in one class list, plus ignore regions.
+    """Build landmark classes and regions ignored during fitting.
 
-    The rulings fix the vertical axis, but only the frequency markers carry a
-    frequency, so a warp onto a standard grid needs both and the rulings alone
-    cannot supply the horizontal half.
-
-    A landmark the detector saw but could not identify is neither a positive
-    nor background: a marker predicted off the observed run, a dark line the
-    lattice rejected, and the film margin outside the exposed ionogram are all
-    places where the absence of a label means unknown, not empty.  Training
-    them as negatives teaches the detector to suppress the very lines it
-    exists to find.
+    Unknown candidates and film margins are kept out of the negative class.
     """
     height, width = int(image_shape[0]), int(image_shape[1])
     labels = list(result.get("csa_consensus_ruling_labels", []))
@@ -511,7 +498,7 @@ def build_ml_labels(result, image_shape, halfwidth=1):
     film_bounds = result.get("film") or {}
     top = float(film_bounds.get("top_row", 0.0))
     bottom = float(film_bounds.get("bottom_row", height - 1))
-    for start, end in ((0, int(top) - 1), (int(math.ceil(bottom)) + 1, height - 1)):
+    for start, end in ((0, int(top) - 1), (math.ceil(bottom) + 1, height - 1)):
         if start <= end:
             ignore.append(
                 {
@@ -561,7 +548,7 @@ def label_consensus_rulings(
         if not match or abs(float(match["csa_row"]) - row) > 2.5:
             match = {}
         exact = match.get("status") == "verified_height_ruling"
-        center = int(round(row))
+        center = round(row)
         labels.append(
             {
                 "class_id": 1,
@@ -598,7 +585,7 @@ def score_csa_ruling_local_similarity(
     exclude_columns=(),
     segments=8,
 ):
-    """Compare local NASA/CSA row-band texture after frequency alignment."""
+    """Compare local NASA and CSA row-band texture after alignment."""
     image = np.asarray(image, dtype=float)
     amplitude = np.asarray(amplitude, dtype=float)
     v_height = np.asarray(v_height, dtype=float).ravel()
@@ -608,7 +595,7 @@ def score_csa_ruling_local_similarity(
     valid = np.isfinite(csa_x) & (csa_x >= 0) & (csa_x <= image.shape[1] - 1)
     for column in exclude_columns:
         valid &= np.abs(cdf_x - column) > 4
-    row = int(round(csa_row))
+    row = round(csa_row)
     nasa_band = np.nanmean(
         amplitude[:, max(0, cdf_row - 2) : min(amplitude.shape[1], cdf_row + 3)],
         axis=1,
@@ -620,7 +607,7 @@ def score_csa_ruling_local_similarity(
     csa_band = np.interp(csa_x, np.arange(image.shape[1]), csa_band)
     scores = []
     edges = np.linspace(0, len(cdf_x), segments + 1, dtype=int)
-    for start, end in zip(edges[:-1], edges[1:]):
+    for start, end in pairwise(edges):
         keep = valid[start:end]
         if np.sum(keep) < 12:
             continue
@@ -649,7 +636,7 @@ def match_nasa_rows_to_csa(
     min_score=0.60,
     min_margin=0.08,
 ):
-    """Keep only CSA rows that are a strong, unambiguous NASA-row match."""
+    """Keep CSA rows with a strong, unambiguous NASA-row match."""
     matches = []
     for nasa in nasa_rows:
         predicted = float(np.polyval(y_coefficients, nasa["virtual_height_km"]))
@@ -701,7 +688,7 @@ def align(
     v_height=None,
     frequency=None,
 ):
-    """Align CDF landmarks to a CSA scan and return geometry plus diagnostics."""
+    """Align CDF landmarks to a CSA scan and return geometry and diagnostics."""
     image = np.asarray(image, dtype=float)
     amplitude = np.asarray(amplitude)
     epoch = np.asarray(epoch, dtype=float).ravel()
@@ -728,7 +715,7 @@ def align(
     sweep_marker_distance = abs(sweep_residual)
 
     marker_features = []
-    for column, frequency, csa_x, residual in zip(
+    for column, marker_frequency, csa_x, residual in zip(
         marker_reference,
         nasa["marker_frequencies"][
             x_fit["reference_start"] : x_fit["reference_start"] + x_fit["count"]
@@ -739,7 +726,7 @@ def align(
         marker_features.append(
             {
                 "name": "frequency_marker",
-                "frequency_mhz": float(frequency),
+                "frequency_mhz": float(marker_frequency),
                 "cdf_column": float(column),
                 "csa_x": float(csa_x),
                 "residual_px": float(residual),
@@ -748,14 +735,16 @@ def align(
 
     matched_reference = set(marker_reference.astype(int))
     unmatched_marker_features = []
-    for column, frequency in zip(nasa["marker_columns"], nasa["marker_frequencies"]):
+    for column, marker_frequency in zip(
+        nasa["marker_columns"], nasa["marker_frequencies"]
+    ):
         if int(column) in matched_reference:
             continue
         predicted = float(np.polyval(x_fit["coefficients"], column))
         unmatched_marker_features.append(
             {
                 "name": "frequency_marker_unmatched",
-                "frequency_mhz": float(frequency),
+                "frequency_mhz": float(marker_frequency),
                 "cdf_column": float(column),
                 "predicted_csa_x": predicted,
                 "status": "outside_detected_marker_run",

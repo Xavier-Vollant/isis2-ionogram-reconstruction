@@ -1,18 +1,10 @@
 #!/usr/bin/env python
-"""Build the NASA master metadata table: one row per digital ISIS-2 ionogram.
+"""Build the NASA metadata table, with one row per digital ISIS-2 ionogram.
 
-Crawls the SPDF pass-header tree
-
-  ionogram_header_ascii/{STATION}_{LAT}_{LON}/isis2/{YYYY}/*.asc
-
-where one `.asc` file is one telemetry pass holding many ionogram records.
-Downloads are cached under data/raw/nasa/headers/, so re-running only parses.
-
-Records are read by label rather than by line offset: real files carry an `ASP`
-field that NASA's published format description does not list, and leave whole
-blocks of fields blank when the sounding status could not be recovered from the
-PCM stream.
+The builder crawls the SPDF pass-header tree, caches downloads, and reads fields
+by label so missing telemetry values remain visible.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -28,7 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-from isis_research.nasa.stations import STATION_DIRS  # noqa: E402
+from isis_research.nasa.stations import STATION_DIRS
 
 BASE_URL = (
     "https://spdf.gsfc.nasa.gov/pub/data/isis/topside_sounder/ionogram_header_ascii"
@@ -185,6 +177,7 @@ def fetch(url, attempts=5):
 
 
 def list_dir(url):
+    """Return names from an SPDF directory listing, or an empty list on 404."""
     body = fetch(url)
     if body is None:
         return []
@@ -222,16 +215,22 @@ def cache_path(station, year, name):
     return RAW_DIR / station / year / name
 
 
+def cache_ready(target):
+    """Return whether a cached pass is present and non-empty."""
+    path = cache_path(*target)
+    return path.is_file() and path.stat().st_size > 0
+
+
 def download_one(target):
     """Never raises: one refused connection must not abandon 11k passes."""
     station, year, name = target
     path = cache_path(station, year, name)
-    if path.exists() and path.stat().st_size > 0:
+    if cache_ready(target):
         return True
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         body = fetch(f"{BASE_URL}/{station}/isis2/{year}/{name}")
-    except Exception:
+    except (OSError, urllib.error.URLError, ValueError):
         return False
     if body is None:
         return False
@@ -248,7 +247,7 @@ def acquire(targets, workers, passes=6, cooldown=120):
     a refusal between sweeps rather than hammering through it.
     """
     for sweep in range(1, passes + 1):
-        missing = [t for t in targets if not cache_path(*t).exists()]
+        missing = [t for t in targets if not cache_ready(t)]
         if not missing:
             break
         print(f"sweep {sweep}: {len(missing)} passes missing", flush=True)
@@ -258,10 +257,10 @@ def acquire(targets, workers, passes=6, cooldown=120):
                 done += 1
                 if done % 250 == 0:
                     print(f"  {done}/{len(missing)}", flush=True)
-        if sweep < passes and any(not cache_path(*t).exists() for t in targets):
+        if sweep < passes and any(not cache_ready(t) for t in targets):
             print(f"  cooling down {cooldown}s", flush=True)
             time.sleep(cooldown)
-    still_missing = [t for t in targets if not cache_path(*t).exists()]
+    still_missing = [t for t in targets if not cache_ready(t)]
     if still_missing:
         print(f"WARNING: {len(still_missing)} passes could not be fetched")
     return still_missing
@@ -355,6 +354,7 @@ def frame_sync(fields):
 
 
 def parse_file(path, station, year_dir):
+    """Parse one NASA pass-header file into normalized ionogram rows."""
     text = path.read_text(encoding="utf-8", errors="replace")
     # Three of NASA's 11000 pass files carry embedded NUL bytes; one has 512 of
     # them. Strip them so the row is still usable, but count them so a corrupt
@@ -420,12 +420,13 @@ def predicted_cdf(fields, station):
 
 
 def main():
+    """Parse CLI options and build the NASA master inventory."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--workers",
         type=int,
         default=2,
-        help="SPDF bans bursts; 8 workers earned an instant refusal",
+        help="number of download workers; keep this low for SPDF",
     )
     parser.add_argument(
         "--rediscover",
@@ -478,7 +479,14 @@ def main():
                 continue
             try:
                 rows, _ = parse_file(path, station, year_dir)
-            except Exception as error:  # keep going; record the casualty
+            except (
+                OSError,
+                IndexError,
+                KeyError,
+                TypeError,
+                ValueError,
+                csv.Error,
+            ) as error:  # keep going; record the casualty
                 stats["parse_error"] += 1
                 print(f"  parse error {path.name}: {error}")
                 continue

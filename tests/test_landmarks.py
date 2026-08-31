@@ -1,13 +1,15 @@
+"""Tests for landmark matching and label classes."""
+
 import numpy as np
 
 from isis_research.registration import film
 from isis_research.registration.landmarks import (
     build_ml_labels,
-    label_csa_rulings,
     label_consensus_rulings,
+    label_csa_rulings,
     match_nasa_rows_to_csa,
-    select_ruling_review_targets,
     resolve_sweep_start,
+    select_ruling_review_targets,
 )
 
 

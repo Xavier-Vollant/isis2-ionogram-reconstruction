@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run exactly one small CSA/NASA dataset batch."""
+"""Run one small CSA/NASA dataset batch."""
 
 from __future__ import annotations
 
@@ -16,11 +16,13 @@ DEFAULT_PROFILE = ROOT / "configs/film_calibration_profile.json"
 
 
 def run(command, env):
+    """Run one batch stage from the repository root and fail on errors."""
     print("$ " + " ".join(str(item) for item in command), flush=True)
     subprocess.run(command, cwd=ROOT, env=env, check=True)
 
 
 def next_batch(root):
+    """Return the next unused numeric batch identifier under ``root``."""
     numbers = []
     for path in root.glob("batch_*"):
         try:
@@ -31,6 +33,7 @@ def next_batch(root):
 
 
 def main():
+    """Parse CLI options and run one amplitude-data batch."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--size", type=int, default=50)
     parser.add_argument("--seed", type=int, default=0)
@@ -38,7 +41,9 @@ def main():
     parser.add_argument("--base-manifest", type=Path, default=DEFAULT_BASE)
     parser.add_argument("--base-records", type=Path, default=DEFAULT_RECORDS)
     parser.add_argument("--profile", type=Path, default=DEFAULT_PROFILE)
-    parser.add_argument("--out-root", type=Path, default=ROOT / "outputs/amplitude_batches")
+    parser.add_argument(
+        "--out-root", type=Path, default=ROOT / "outputs/amplitude_batches"
+    )
     parser.add_argument("--candidates", type=Path, action="append", default=None)
     args = parser.parse_args()
     if args.size < 1:
@@ -76,14 +81,20 @@ def main():
     prepare = [
         python,
         str(ROOT / "scripts/dataset/prepare_phase1_pairs_target.py"),
-        "--existing", str(args.base_manifest),
-        "--records", str(args.base_records),
-        "--landmarks", str(ROOT / "outputs/landmarks/batch6400"),
-        "--target", str(args.size),
-        "--seed", str(args.seed or batch_id),
+        "--existing",
+        str(args.base_manifest),
+        "--records",
+        str(args.base_records),
+        "--landmarks",
+        str(ROOT / "outputs/landmarks/batch6400"),
+        "--target",
+        str(args.size),
+        "--seed",
+        str(args.seed or batch_id),
         "--randomize",
         "--fresh-only",
-        "--out", str(pairs),
+        "--out",
+        str(pairs),
     ]
     for candidate in candidates:
         prepare.extend(("--candidates", str(candidate)))
@@ -92,16 +103,130 @@ def main():
     run(prepare, env)
 
     reuse = [ROOT / "outputs/landmarks/batch6400", ROOT / "outputs/landmarks/batch3200"]
-    align = [python, str(ROOT / "scripts/dataset/align_phase1_pairs.py"), "--pairs", str(pairs / "manifest.csv"), "--out", str(landmarks), "--workers", "8"]
+    align = [
+        python,
+        str(ROOT / "scripts/dataset/align_phase1_pairs.py"),
+        "--pairs",
+        str(pairs / "manifest.csv"),
+        "--out",
+        str(landmarks),
+        "--workers",
+        "8",
+    ]
     for path in reuse:
         align.extend(("--reuse", str(path)))
     run(align, env)
-    run([python, str(ROOT / "scripts/pipeline/extract_scan_structure.py"), "--manifest", str(pairs / "manifest.csv"), "--out-dir", str(structure), "--no-plots"], env)
-    run([python, str(ROOT / "scripts/pipeline/fit_frequency_axis.py"), "--batch", "--phase1-manifest", str(pairs / "manifest.csv"), "--phase1-records", str(pairs / "phase1_records.csv"), "--structure-dir", str(structure / "json"), "--landmark-dir", str(landmarks), "--profile", str(args.profile), "--out-dir", str(frequency)], env)
-    run([python, str(ROOT / "scripts/pipeline/fit_height_axis.py"), "--phase1-manifest", str(pairs / "manifest.csv"), "--structure-dir", str(structure / "json"), "--frequency-dir", str(frequency), "--landmark-dir", str(landmarks), "--profile", str(args.profile), "--out-dir", str(height), "--route", "both"], env)
-    run([python, str(ROOT / "scripts/pipeline/warp_calibrated_scan.py"), "--manifest", str(pairs / "manifest.csv"), "--structure-dir", str(structure / "json"), "--frequency-dir", str(frequency), "--height-dir", str(height), "--out-dir", str(warp), "--route", "both", "--no-plots"], env)
-    run([python, str(ROOT / "scripts/dataset/quality_gate.py"), "--phase1-manifest", str(pairs / "manifest.csv"), "--structure-dir", str(structure / "json"), "--frequency-dir", str(frequency), "--height-dir", str(height), "--warp-dir", str(warp), "--comparison-dir", str(warp / "comparisons"), "--out-dir", str(quality)], env)
-    run([python, str(ROOT / "scripts/dataset/package_amplitude_dataset.py"), "--final", str(quality / "final_routing.csv"), "--pairs", str(pairs / "manifest.csv"), "--warp", str(warp), "--out", str(dataset), "--min-usable-pairs", "1"], env)
+    run(
+        [
+            python,
+            str(ROOT / "scripts/pipeline/extract_scan_structure.py"),
+            "--manifest",
+            str(pairs / "manifest.csv"),
+            "--out-dir",
+            str(structure),
+            "--no-plots",
+        ],
+        env,
+    )
+    run(
+        [
+            python,
+            str(ROOT / "scripts/pipeline/fit_frequency_axis.py"),
+            "--batch",
+            "--phase1-manifest",
+            str(pairs / "manifest.csv"),
+            "--phase1-records",
+            str(pairs / "phase1_records.csv"),
+            "--structure-dir",
+            str(structure / "json"),
+            "--landmark-dir",
+            str(landmarks),
+            "--profile",
+            str(args.profile),
+            "--out-dir",
+            str(frequency),
+        ],
+        env,
+    )
+    run(
+        [
+            python,
+            str(ROOT / "scripts/pipeline/fit_height_axis.py"),
+            "--phase1-manifest",
+            str(pairs / "manifest.csv"),
+            "--structure-dir",
+            str(structure / "json"),
+            "--frequency-dir",
+            str(frequency),
+            "--landmark-dir",
+            str(landmarks),
+            "--profile",
+            str(args.profile),
+            "--out-dir",
+            str(height),
+            "--route",
+            "both",
+        ],
+        env,
+    )
+    run(
+        [
+            python,
+            str(ROOT / "scripts/pipeline/warp_calibrated_scan.py"),
+            "--manifest",
+            str(pairs / "manifest.csv"),
+            "--structure-dir",
+            str(structure / "json"),
+            "--frequency-dir",
+            str(frequency),
+            "--height-dir",
+            str(height),
+            "--out-dir",
+            str(warp),
+            "--route",
+            "both",
+            "--no-plots",
+        ],
+        env,
+    )
+    run(
+        [
+            python,
+            str(ROOT / "scripts/dataset/quality_gate.py"),
+            "--phase1-manifest",
+            str(pairs / "manifest.csv"),
+            "--structure-dir",
+            str(structure / "json"),
+            "--frequency-dir",
+            str(frequency),
+            "--height-dir",
+            str(height),
+            "--warp-dir",
+            str(warp),
+            "--comparison-dir",
+            str(warp / "comparisons"),
+            "--out-dir",
+            str(quality),
+        ],
+        env,
+    )
+    run(
+        [
+            python,
+            str(ROOT / "scripts/dataset/package_amplitude_dataset.py"),
+            "--final",
+            str(quality / "final_routing.csv"),
+            "--pairs",
+            str(pairs / "manifest.csv"),
+            "--warp",
+            str(warp),
+            "--out",
+            str(dataset),
+            "--min-usable-pairs",
+            "1",
+        ],
+        env,
+    )
     print(f"completed batch {batch_id:04d}: {dataset}")
 
 

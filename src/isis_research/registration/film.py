@@ -1,16 +1,8 @@
-"""Geometry that places a CSA film scan on NASA's frequency/height grid.
+"""Geometry for placing a CSA film scan on frequency and height axes.
 
-The horizontal mapping comes from physical features neither archive derives
-from the other: the sounder's frequency markers, which NASA times outright and
-the film records as bold full-height lines. Fitting one against the other needs
-no assumption about sweep linearity - the sweep is markedly nonlinear, and the
-fit absorbs that because the markers drive it.
-
-The vertical mapping is the weak one. The film's height rulings give a spacing
-in pixels, but their spacing in kilometres is supplied by neither archive, and
-the row that means zero kilometres is likewise assumed. Both are therefore
-parameters of `Geometry` rather than constants, so they can be fitted against a
-matched NASA array instead of guessed.
+Frequency markers define the horizontal mapping without assuming a linear
+sweep. Film rulings provide vertical spacing in pixels; the physical scale and
+zero-height row are calibration parameters.
 """
 
 from __future__ import annotations
@@ -24,7 +16,7 @@ from scipy.ndimage import map_coordinates
 
 @dataclass(frozen=True)
 class Geometry:
-    """Film pixel coordinates as a function of scan-line time and virtual height."""
+    """Map film pixels to scan-line time and virtual height."""
 
     coefficients: np.ndarray  # film_x = polyval(coefficients, line_time)
     zero_row: float  # film row that means zero kilometres
@@ -63,12 +55,13 @@ class Geometry:
 
 
 def rolling_median(values, window):
+    """Return a same-length rolling median with edge padding."""
     padded = np.pad(values, window // 2, mode="edge")
     return np.array([np.median(padded[i : i + window]) for i in range(len(values))])
 
 
 def find_dark_lines(profile, window, sigma, merge):
-    """Centroids of narrow dark lines, after removing broad density variation."""
+    """Return centroids of narrow dark lines in a profile."""
     highpass = profile - rolling_median(profile, window)
     threshold = -sigma * highpass.std()
     hits = np.where(highpass < threshold)[0]
@@ -82,16 +75,7 @@ def find_dark_lines(profile, window, sigma, merge):
 
 
 def film_regions(image, merge=5):
-    """-> (top, bottom) of the data area, excluding margin and time-code band.
-
-    Bright rows are grouped, and groups separated by a short gap are merged:
-    the height-ruling lines are themselves periodic dark rows, so without
-    merging, a run-length definition fragments the real area on every ruling
-    and can select a fragment far smaller than the true ionogram. The gap
-    tolerance is kept short so a single bright row inside the time-code band
-    (e.g. a wide digit stroke) stays its own isolated group instead of
-    merging into and extending the real boundary.
-    """
+    """Return the top and bottom rows of the exposed data area."""
     row_mean = image.mean(axis=1)
     bright = np.flatnonzero(row_mean > row_mean.max() * 0.35)
     if not len(bright):
@@ -107,19 +91,13 @@ def film_regions(image, merge=5):
 
 
 class FitFailed(Exception):
-    """Raised when a scan cannot be placed on the grid, with the reason why.
-
-    An exception rather than an exit, because this runs inside a batch driver
-    and inside a calibration search, and neither can afford a library that
-    terminates the process to report one unusable scan.
-    """
+    """Raised when a scan cannot be placed on the target grid."""
 
 
 def _windowed_fit(
     observed, reference, observed_start, reference_start, count, skip=None
 ):
-    """-> (score-ingredients tuple) for one contiguous window, with an
-    optional single interior observed index excluded."""
+    """Score one contiguous marker window, with an optional skipped index."""
     x = reference[reference_start : reference_start + count]
     if skip is None:
         indices = np.arange(observed_start, observed_start + count)
@@ -138,35 +116,17 @@ def _windowed_fit(
 
 
 def fit_marker_axis(observed, reference, min_fraction=0.50, refine_window=5):
-    """Fit reference marker positions (NASA's times, or a nominal index) to a
-    long ordered run of detected film marker lines.
+    """Fit reference positions to an ordered run of film marker lines.
 
-    Extra frame lines are common, so every sufficiently long contiguous pair of
-    runs is tried on both sides - unlike a fit anchored at the start of each
-    array, this finds a match even when the film's leading lines are spurious
-    or NASA's own list does not begin at marker zero. The length floor
-    prevents a coincidental four-line match from beating a marginally worse
-    but much longer one.
-
-    A single spurious extra dark line *inside* an otherwise clean run (a
-    scratch, a crossing trace) is a different failure than an extra line at
-    the frame edge: a purely contiguous match has no way to drop it without
-    also discarding every genuine marker on one side, and keeping it shifts
-    every following marker's assignment by one line - the residual then
-    fails smoothly across many markers rather than as one clear outlier.
-
-    Trying every interior skip position for every one of the O(n^3) plain
-    windows is too slow to run per scan. Since a skip only ever helps a
-    window that a plain fit already fits badly, it is tried only as a
-    second pass, in a small neighbourhood around the best plain match - not
-    across the whole search.
+    The fit tests contiguous windows and may skip one interior line when that
+    improves an otherwise plausible match.
     """
     observed = np.asarray(observed, dtype=float).ravel()
     reference = np.asarray(reference, dtype=float).ravel()
     if len(observed) < 4 or len(reference) < 4:
         raise FitFailed("need at least four marker lines in both archives")
 
-    minimum = max(4, int(math.ceil(min(len(observed), len(reference)) * min_fraction)))
+    minimum = max(4, math.ceil(min(len(observed), len(reference)) * min_fraction))
     available = min(len(observed), len(reference))
 
     def score(count, rms, skipped):
@@ -253,7 +213,7 @@ def fit_marker_axis(observed, reference, min_fraction=0.50, refine_window=5):
 
 
 def solve(image, mark_times, km_per_ruling, marker_sigma, ruling_sigma, tolerance):
-    """-> (Geometry, diagnostics) from the film's own markers and rulings."""
+    """Return film geometry and diagnostics from markers and rulings."""
     top, bottom = film_regions(image)
     band = image[top:bottom]
     markers = find_dark_lines(band.mean(axis=0), 61, marker_sigma, 4)
@@ -291,11 +251,9 @@ def solve(image, mark_times, km_per_ruling, marker_sigma, ruling_sigma, toleranc
 
 
 def resample(image, geometry, line_time, v_height):
-    """-> the film on NASA's (scan line x height bin) grid, signal-positive.
+    """Resample the film onto a signal-positive frequency-by-height grid.
 
-    Film traces are dark on a light base, so the image is inverted first: what
-    comes back is large where the film is dark. That is a density, never an
-    amplitude, and nothing here converts between the two.
+    Dark film becomes large values. The result is density, not amplitude.
     """
     grid_x, grid_y = np.meshgrid(
         geometry.columns(line_time), geometry.rows(v_height), indexing="ij"

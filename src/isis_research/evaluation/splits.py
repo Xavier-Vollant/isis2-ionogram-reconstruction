@@ -1,20 +1,8 @@
-"""Reel- and station-disjoint evaluation, and uncertainty by deployment unit.
+"""Reel- and station-disjoint splits with group-level uncertainty.
 
-One film reel supplies up to 117 scans that share film stock, exposure and
-scanner pass, so a scan-level split leaks badly: the model meets the test
-reel's own siblings during training and the held-out score measures memory
-rather than generalization. Every split here groups by reel, and
-`check_disjoint` is the assertion that says so out loud.
-
-The deployment unit is the reel and the station, not the scan. A median over
-scans is dominated by whichever reel contributed most of them - Resolute
-supplies 943 of the held-out scans and Kashima 17 - so a scan-level
-confidence interval describes the biggest reel, not the archive. The
-bootstrap here resamples the *groups*.
-
-Seed variation is not dataset uncertainty. Re-running a fit with a different
-random seed measures the optimizer, not the archive, and must never be
-reported as a confidence interval.
+Scans from one reel share film and scanner conditions, so splitting individual
+scans can leak information. These helpers keep groups together and bootstrap
+those groups rather than individual scans.
 """
 
 from __future__ import annotations
@@ -23,11 +11,12 @@ import numpy as np
 
 
 def groups_of(records, key="reel"):
+    """Return sorted unique values for a split key."""
     return sorted({record[key] for record in records})
 
 
 def check_disjoint(fit_records, test_records, key="reel"):
-    """Raise if any group appears on both sides of a split."""
+    """Raise if a group appears in both the fit and test records."""
     leaked = sorted(
         set(groups_of(fit_records, key)) & set(groups_of(test_records, key))
     )
@@ -39,11 +28,9 @@ def check_disjoint(fit_records, test_records, key="reel"):
 
 
 def grouped_folds(records, folds, seed=0, key="reel"):
-    """Yield (fit, test) folds that are disjoint by `key`.
+    """Yield fit/test folds that are disjoint by `key`.
 
-    Groups are dealt largest-first into the currently smallest bucket, so the
-    folds carry comparable scan counts even though reels differ in size by two
-    orders of magnitude.
+    Groups are assigned largest-first to the fold with the fewest records.
     """
     groups = groups_of(records, key)
     if len(groups) < folds:
@@ -66,11 +53,9 @@ def grouped_folds(records, folds, seed=0, key="reel"):
 
 
 def leave_one_out(records, key="reel", min_test=1):
-    """Yield (fit, test, group) holding out one whole group at a time.
+    """Yield fit/test records while holding out one group at a time.
 
-    This is leave-one-reel-out and leave-one-station-out both, depending on
-    `key`. Groups smaller than `min_test` are skipped rather than reported as
-    a fold whose score is one scan wide.
+    Groups smaller than `min_test` are skipped.
     """
     for group in groups_of(records, key):
         test = [record for record in records if record[key] == group]
@@ -86,10 +71,9 @@ def leave_one_out(records, key="reel", min_test=1):
 def bootstrap_ci(
     values, statistic=np.median, resamples=2000, seed=0, alpha=0.05, min_n=3
 ):
-    """-> (statistic, low, high) by resampling `values` with replacement.
+    """Return a statistic and bootstrap interval for `values`.
 
-    `low`/`high` are None below `min_n`, because a two-point interval invites
-    a confidence claim the sample cannot support.
+    The interval is omitted when there are fewer than `min_n` values.
     """
     values = np.asarray(
         [v for v in values if v is not None and np.isfinite(v)], dtype=float
@@ -108,11 +92,7 @@ def bootstrap_ci(
 
 
 def group_summary(records, values, key="reel", statistic=np.median, seed=0):
-    """Per-group n and bootstrapped statistic, for the report table.
-
-    The interval is over scans within the group; `overall` bootstraps the
-    per-group statistics themselves, so one large reel cannot set the width.
-    """
+    """Return per-group statistics and an overall group-level summary."""
     values = np.asarray(values, dtype=float)
     rows = []
     for group in groups_of(records, key):

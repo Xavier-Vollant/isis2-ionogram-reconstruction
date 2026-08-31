@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Warp calibrated CSA scans onto regular frequency x virtual-height grids."""
+"""Warp calibrated CSA scans onto regular frequency-by-height grids."""
 
 from __future__ import annotations
 
@@ -12,16 +12,16 @@ from pathlib import Path
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-from PIL import Image  # noqa: E402
-from scipy.ndimage import map_coordinates  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
+from scipy.ndimage import map_coordinates
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
-from isis_research import ionogram  # noqa: E402
-from scripts.pipeline.extract_scan_structure import normalize  # noqa: E402
+from isis_research import ionogram
+from scripts.pipeline.extract_scan_structure import normalize
 
 DEFAULT_MANIFEST = ROOT / "outputs/calibration/phase1_pairs/manifest.csv"
 DEFAULT_STRUCTURE_DIR = ROOT / "outputs/calibration/phase3_structure/json"
@@ -31,6 +31,7 @@ DEFAULT_OUT = ROOT / "outputs/calibration/phase6_warped"
 
 
 def load_json(path):
+    """Read a UTF-8 JSON sidecar into a Python object."""
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
@@ -113,6 +114,7 @@ def _height_at_row(height_result, row):
 
 
 def combined_status(frequency_result, height_result):
+    """Combine two axis statuses, preserving the most serious outcome."""
     statuses = {frequency_result.get("status"), height_result.get("status")}
     if "not_usable" in statuses:
         return "not_usable"
@@ -122,6 +124,7 @@ def combined_status(frequency_result, height_result):
 
 
 def target_bounds(structure, frequency_result, height_result):
+    """Derive regular-grid frequency and height bounds from one scan."""
     frequency = _mapping_points(frequency_result, "film_column", "frequency_mhz")[1]
     film_top = float(structure["film_region"]["top_row"])
     film_bottom = float(structure["film_region"]["bottom_row"])
@@ -134,7 +137,9 @@ def target_bounds(structure, frequency_result, height_result):
     return float(frequency[0]), float(frequency[-1]), height_min, float(height_max)
 
 
-def warp_array(image, frequency_result, height_result, bounds, frequency_bins=512, height_bins=512):
+def warp_array(
+    image, frequency_result, height_result, bounds, frequency_bins=512, height_bins=512
+):
     """Return normalized (height, frequency) data and its valid mask."""
     frequency_min, frequency_max, height_min, height_max = bounds
     target_frequency = np.linspace(frequency_min, frequency_max, frequency_bins)
@@ -169,7 +174,6 @@ def warp_array(image, frequency_result, height_result, bounds, frequency_bins=51
 
 
 def write_figure(path, warped, frequency, height, title, status, coverage, warnings):
-    finite = np.isfinite(warped)
     image = np.nan_to_num(warped, nan=1.0)
     figure, axis = plt.subplots(figsize=(11, 8), dpi=130)
     axis.imshow(
@@ -178,7 +182,12 @@ def write_figure(path, warped, frequency, height, title, status, coverage, warni
         origin="lower",
         aspect="auto",
         interpolation="nearest",
-        extent=[float(frequency[0]), float(frequency[-1]), float(height[0]), float(height[-1])],
+        extent=[
+            float(frequency[0]),
+            float(frequency[-1]),
+            float(height[0]),
+            float(height[-1]),
+        ],
         vmin=0.0,
         vmax=1.0,
     )
@@ -190,15 +199,23 @@ def write_figure(path, warped, frequency, height, title, status, coverage, warni
         fontsize=9,
     )
     axis.set_xlim(float(frequency[0]), float(frequency[-1]))
-    # Keep the final Phase 6 convention fixed: 0 km at the top and increasing
-    # virtual height downward.
+    # Keep the exported convention fixed: 0 km at the top and virtual height
+    # increasing downward.
     axis.set_ylim(float(height[-1]), float(height[0]))
     figure.tight_layout()
     figure.savefig(path)
     plt.close(figure)
 
 
-def warp_one(image, frequency_result, height_result, structure, frequency_bins=512, height_bins=512):
+def warp_one(
+    image,
+    frequency_result,
+    height_result,
+    structure,
+    frequency_bins=512,
+    height_bins=512,
+):
+    """Warp one scan and return its quality record plus optional arrays."""
     status = combined_status(frequency_result, height_result)
     result = {
         "schema": "isis.csa_warp_result.v1",
@@ -272,7 +289,7 @@ def _write_outputs(out_dir, stem, result, arrays, title, write_plot=True, route=
         arrays["height"],
         status=result["status"],
         route=route,
-        # Phase 6 has no calibrated echo-confidence measure.  Its only
+        # The warp has no calibrated echo-confidence measure. Its only
         # defensible scalar confidence is geometric support: the fraction of
         # target pixels backed by the source film.
         confidence=float(result["confidence"]),
@@ -317,6 +334,7 @@ def process_manifest(
     limit=None,
     write_plots=True,
 ):
+    """Warp manifest scans and write canonical artifacts and diagnostics."""
     manifest_path, structure_dir, frequency_dir, height_dir, out_dir = map(
         Path, (manifest_path, structure_dir, frequency_dir, height_dir, out_dir)
     )
@@ -380,7 +398,7 @@ def process_manifest(
         writer.writeheader()
         writer.writerows(records)
     (out_dir / "README.md").write_text(
-        "# Phase 6 warped ionograms\n\n"
+        "# Warped ionograms\n\n"
         f"Regular-grid renders for {len(rows)} scans and route(s): {', '.join(routes)}.\n\n"
         "Each successful result contains a PNG graph, a canonical ionogram NPZ, and a JSON calibration sidecar. The NPZ stores normalized warped intensity, a valid-pixel mask, frequency coordinates, virtual-height coordinates, and embedded status/provenance metadata. Its confidence is valid-pixel coverage: geometric support, not echo confidence. Height uses a constrained piecewise mapping when trusted CDF or ruling-lattice anchors are available, otherwise it falls back to the affine scale. The graph covers only the calibrated frequency range and the film's calibrated height region.\n\n"
         "A `review` graph is usable for inspection but carries warnings. `not_usable` cases receive a JSON reason and no graph. The `comparisons/` subdirectory contains three-panel images with the pure CDF, route-specific warped CSA, and raw CSA on shared axes; 0 km is at the top and virtual height increases downward.\n",
@@ -390,13 +408,16 @@ def process_manifest(
 
 
 def main():
+    """Parse CLI options and warp calibrated scans to regular grids."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--structure-dir", type=Path, default=DEFAULT_STRUCTURE_DIR)
     parser.add_argument("--frequency-dir", type=Path, default=DEFAULT_FREQUENCY_DIR)
     parser.add_argument("--height-dir", type=Path, default=DEFAULT_HEIGHT_DIR)
     parser.add_argument("--out-dir", type=Path, default=DEFAULT_OUT)
-    parser.add_argument("--route", choices=["cdf_assisted", "film_only", "both"], default="both")
+    parser.add_argument(
+        "--route", choices=["cdf_assisted", "film_only", "both"], default="both"
+    )
     parser.add_argument("--frequency-bins", type=int, default=512)
     parser.add_argument("--height-bins", type=int, default=512)
     parser.add_argument("--limit", type=int, default=None)

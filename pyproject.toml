@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "final-isis"
 version = "0.1.0"
-description = "Raw CSA scan to model-derived NASA-CDF-like ionogram"
+description = "Convert scanned CSA ISIS-2 ionograms into calibrated model data"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "cdflib==1.3.12",
@@ -17,7 +17,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest==9.1.1", "ruff==0.16.4"]
+dev = ["coverage==7.10.6", "pytest==9.1.1", "ruff==0.16.4"]
 notebooks = [
     "ipykernel==7.3.0",
     "jupyterlab==4.6.3",
@@ -30,3 +30,9 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "."]
+
+[tool.ruff.lint.per-file-ignores]
+"scripts/**/*.py" = ["E402"]
+"tests/test_catalog_builders.py" = ["E402"]
+"tests/test_download_candidate_data.py" = ["E402"]
+"notebooks/**/*.ipynb" = ["E402"]

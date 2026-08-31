@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-"""Test training-only contrast calibration on every stored Phase 6 model.
+"""Compare an inference-only contrast calibration across stored models.
 
-This is inference-only.  Checkpoints are never overwritten; the output is a
-separate report containing before/after metrics for the fixed 128-scan,
-reel-balanced held-out benchmark.
+Checkpoints are read-only. The command writes a separate before/after report.
 """
 
 from __future__ import annotations
@@ -19,14 +17,13 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from scripts.evaluation.evaluate_phase6_512_image_model import load_model  # noqa: E402
-from scripts.experiments.run_phase6_experiment_ab import (  # noqa: E402
+from scripts.evaluation.evaluate_phase6_512_image_model import load_model
+from scripts.experiments.run_phase6_experiment_ab import (
     load_experiment_sample,
     predict,
     record_metrics,
 )
-from scripts.training.train_phase6_512_image_model import rows_for  # noqa: E402
-
+from scripts.training.train_phase6_512_image_model import rows_for
 
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
@@ -133,6 +130,7 @@ def calibrated(output, calibration):
 
 
 def main():
+    """Parse CLI options and run the contrast comparison experiment."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--targets", type=Path, default=DEFAULT_TARGETS)
@@ -142,7 +140,9 @@ def main():
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
     if args.output.exists() and any(args.output.iterdir()):
-        raise SystemExit(f"output is not empty: {args.output}; remove it to rerun the test")
+        raise SystemExit(
+            f"output is not empty: {args.output}; remove it to rerun the test"
+        )
 
     import torch
 
@@ -151,7 +151,9 @@ def main():
     target_rows = {row["pair_name"]: row for row in rows_for(args.targets)}
     groups = read_group_rows(args.groups)
     train_rows = [row for row in corpus_rows if row["split"] == "train"]
-    held_out_rows = {row["pair_name"]: row for row in corpus_rows if row["split"] == "held_out"}
+    held_out_rows = {
+        row["pair_name"]: row for row in corpus_rows if row["split"] == "held_out"
+    }
     benchmark = json.loads(args.benchmark.read_text(encoding="utf-8"))
     selected_names = benchmark["model_benchmark"]["pair_names"]
     benchmark_rows = [held_out_rows[name] for name in selected_names]
@@ -227,7 +229,10 @@ def main():
     for name, item in models.items():
         before_records = records[name]
         before_metrics = [record["metrics"] for record in before_records]
-        after_metrics = [per_pair[row["pair_name"]]["models"][name]["after"] for row in benchmark_rows]
+        after_metrics = [
+            per_pair[row["pair_name"]]["models"][name]["after"]
+            for row in benchmark_rows
+        ]
         before = summarize(before_metrics)
         after = summarize(after_metrics)
         before_mae = np.asarray([metric_item["mae"] for metric_item in before_metrics])
@@ -298,10 +303,12 @@ def main():
         "per_pair": per_pair,
     }
     args.output.mkdir(parents=True, exist_ok=True)
-    (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (args.output / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
 
     lines = [
-        "# Phase 6 all-model contrast test",
+        "# Contrast calibration comparison",
         "",
         f"Inference-only comparison of all `{len(models)}` stored checkpoints on `{len(benchmark_rows)}` held-out scans covering `{len(held_out_reels)}` reels.",
         "No checkpoint or production model was modified. Contrast calibration was fitted separately for each model using one training scan per reel.",
@@ -309,8 +316,14 @@ def main():
         "| Model | Before MAE | After MAE | Δ MAE | Before corr. | After corr. | Before std | After std | MAE win rate |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
-    for name, result in sorted(model_reports.items(), key=lambda item: item[1]["after"]["macro_mae"]):
-        before, after, comparison = result["before"], result["after"], result["comparison"]
+    for name, result in sorted(
+        model_reports.items(), key=lambda item: item[1]["after"]["macro_mae"]
+    ):
+        before, after, comparison = (
+            result["before"],
+            result["after"],
+            result["comparison"],
+        )
         lines.append(
             f"| {result['label']} | {before['macro_mae']:.4f} | {after['macro_mae']:.4f} | {comparison['delta_macro_mae']:+.4f} | {before['macro_correlation']:.4f} | {after['macro_correlation']:.4f} | {before['mean_prediction_std_ratio']:.3f} | {after['mean_prediction_std_ratio']:.3f} | {comparison['mae_win_rate']:.1%} |"
         )
@@ -326,7 +339,17 @@ def main():
         ]
     )
     (args.output / "REPORT.md").write_text("\n".join(lines), encoding="utf-8")
-    print(json.dumps({"output": str(args.output), "models": list(model_reports), "report": str(args.output / "REPORT.md")}, indent=2), flush=True)
+    print(
+        json.dumps(
+            {
+                "output": str(args.output),
+                "models": list(model_reports),
+                "report": str(args.output / "REPORT.md"),
+            },
+            indent=2,
+        ),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

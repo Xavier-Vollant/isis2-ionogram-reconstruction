@@ -1,3 +1,5 @@
+"""Tests for scan-structure extraction outputs."""
+
 import numpy as np
 
 from scripts.pipeline.extract_scan_structure import extract_structure

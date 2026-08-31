@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export an existing ISIS model prediction as a NASA-CDF-like ionogram."""
+"""Export a model prediction as a NASA-CDF-like ionogram."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.nasa.model_cdf import (  # noqa: E402
+from isis_research import ionogram
+from isis_research.nasa.model_cdf import (
     export_model_cdf,
     header_from_csa,
     read_model_output,
@@ -23,9 +23,12 @@ from isis_research.nasa.model_cdf import (  # noqa: E402
 
 
 def main(argv=None):
+    """Parse CLI options and export a model prediction as a CDF."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model_output", type=Path, help="model prediction .npz")
-    parser.add_argument("--csa", type=Path, required=True, help="validated CSA artifact (.npz)")
+    parser.add_argument(
+        "--csa", type=Path, required=True, help="validated CSA artifact (.npz)"
+    )
     parser.add_argument(
         "--pair-name",
         help="CSA pair name containing YYYYDDDHHMMSS; defaults to the raw CSA filename",
@@ -36,7 +39,9 @@ def main(argv=None):
     args = parser.parse_args(argv)
 
     scan = ionogram.read_validated(args.csa)
-    _, _, model_frequency, model_height, _ = read_model_output(args.model_output, scale=args.scale)
+    _, _, model_frequency, model_height, _ = read_model_output(
+        args.model_output, scale=args.scale
+    )
     if not np.allclose(model_frequency, scan.frequency_mhz) or not np.allclose(
         model_height, scan.virtual_height_km
     ):
@@ -44,8 +49,12 @@ def main(argv=None):
 
     pair_name = args.pair_name or _pair_name_from_scan(args.csa, scan)
     station = args.station or str(scan.meta.get("station", ""))
-    header = header_from_csa(pair_name, station, scan.frequency_mhz, scan.virtual_height_km)
-    values, _ = export_model_cdf(args.model_output, header, args.output, scale=args.scale)
+    header = header_from_csa(
+        pair_name, station, scan.frequency_mhz, scan.virtual_height_km
+    )
+    values, _ = export_model_cdf(
+        args.model_output, header, args.output, scale=args.scale
+    )
     cdf = cdflib.CDF(str(args.output))
     print(
         json.dumps(

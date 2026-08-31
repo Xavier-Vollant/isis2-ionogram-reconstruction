@@ -1,4 +1,7 @@
+"""Tests for end-to-end single-scan orchestration."""
+
 from pathlib import Path
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -44,6 +47,36 @@ def test_rejected_scan_with_diagnostics_keeps_inspection_output(monkeypatch, tmp
     assert calls == [output / "diagnostics"]
 
 
+def test_rejected_scan_reports_diagnostic_failure_without_hiding_primary_error(
+    monkeypatch, tmp_path
+):
+    film = tmp_path / "scan.png"
+    profile = tmp_path / "profile.json"
+    output = tmp_path / "output"
+    film.write_bytes(b"film")
+    profile.write_text("{}")
+
+    monkeypatch.setattr(
+        run_scan,
+        "standardize",
+        lambda path, loaded_profile, destination: {
+            "status": "not_usable",
+            "reason": "insufficient marker support",
+        },
+    )
+
+    def fail_diagnostics(path, destination, loaded_profile):
+        raise RuntimeError("overlay failed")
+
+    monkeypatch.setattr(run_scan, "_write_diagnostics", fail_diagnostics)
+
+    with pytest.raises(
+        ValueError,
+        match="insufficient marker support; diagnostics failed: overlay failed",
+    ):
+        run_scan.run_scan(film, output, profile_path=profile, diagnostics=True)
+
+
 def test_run_scan_connects_the_three_product_stages(tmp_path, monkeypatch):
     film = tmp_path / "scan.png"
     output = tmp_path / "output"
@@ -69,7 +102,7 @@ def test_run_scan_connects_the_three_product_stages(tmp_path, monkeypatch):
         intensity = np.zeros((2, 2))
         frequency_mhz = np.array([1.0, 2.0])
         virtual_height_km = np.array([0.0, 100.0])
-        meta = {"status": "usable"}
+        meta: ClassVar = {"status": "usable"}
 
     def fake_read(path):
         calls.append("read")

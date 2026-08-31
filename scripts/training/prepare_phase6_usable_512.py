@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-"""Prepare the strict usable film-only Phase 6 corpus at native 512x512.
+"""Prepare the usable film-only corpus at native 512x512 resolution.
 
-The Phase 6 arrays already use the desired physical grid and exclude the
-detected film-region margins.  This command only migrates their legacy NPZ
-layout into the validated ionogram contract and verifies that each matched
-NASA CDF can be placed on the exact same axes.
+The command migrates legacy NPZ files into the validated ionogram contract and
+checks that each matched NASA CDF uses the same axes.
 """
 
 from __future__ import annotations
@@ -20,9 +18,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.nasa.cdf import cdf_amplitude  # noqa: E402
-
+from isis_research import ionogram
+from isis_research.nasa.cdf import cdf_amplitude
 
 DEFAULT_DATASET = ROOT / "outputs/datasets/amplitude_usable_6400_batch"
 DEFAULT_PHASE1 = ROOT / "outputs/calibration/phase1_pairs_6400/manifest.csv"
@@ -31,7 +28,10 @@ GRID_SHAPE = (512, 512)
 
 
 def read_rows(dataset_dir, phase1_path):
-    with (Path(dataset_dir) / "dataset_index.csv").open(newline="", encoding="utf-8") as handle:
+    """Collect film-only dataset rows and verify their source files exist."""
+    with (Path(dataset_dir) / "dataset_index.csv").open(
+        newline="", encoding="utf-8"
+    ) as handle:
         dataset_rows = list(csv.DictReader(handle))
     with Path(phase1_path).open(newline="", encoding="utf-8") as handle:
         phase1 = {row["pair_name"]: row for row in csv.DictReader(handle)}
@@ -40,27 +40,40 @@ def read_rows(dataset_dir, phase1_path):
         if row["selected_route"] != "film_only":
             continue
         if row["pair_name"] not in phase1:
-            raise ValueError(f"missing Phase 1 row for {row['pair_name']}")
+            raise ValueError(f"missing pair-manifest row for {row['pair_name']}")
         csa = Path(dataset_dir) / row["csa_warped"]
         cdf = Path(dataset_dir) / row["nasa_cdf"]
         if not csa.is_file() or not cdf.is_file():
             raise ValueError(f"missing CSA/CDF source for {row['pair_name']}")
-        rows.append({**row, "phase1": phase1[row["pair_name"]], "csa_path": csa, "cdf_path": cdf})
+        rows.append(
+            {
+                **row,
+                "phase1": phase1[row["pair_name"]],
+                "csa_path": csa,
+                "cdf_path": cdf,
+            }
+        )
     return rows
 
 
 def choose_rows(rows, limit, seed):
+    """Choose a reproducible subset of rows when a limit is requested."""
     if limit is None or limit >= len(rows):
         return rows
     if limit < 1:
         raise ValueError("limit must be positive")
     rng = np.random.default_rng(seed)
-    return [rows[index] for index in np.sort(rng.choice(len(rows), limit, replace=False))]
+    return [
+        rows[index] for index in np.sort(rng.choice(len(rows), limit, replace=False))
+    ]
 
 
 def validate_pair(row, scan):
+    """Check the CSA grid and confirm that its NASA label overlaps it."""
     if scan.intensity.shape != GRID_SHAPE:
-        raise ValueError(f"{row['pair_name']}: expected {GRID_SHAPE}, got {scan.intensity.shape}")
+        raise ValueError(
+            f"{row['pair_name']}: expected {GRID_SHAPE}, got {scan.intensity.shape}"
+        )
     if scan.valid_mask.shape != GRID_SHAPE or not scan.valid_mask.any():
         raise ValueError(f"{row['pair_name']}: invalid CSA mask")
     target, target_valid = cdf_amplitude(
@@ -74,6 +87,7 @@ def validate_pair(row, scan):
 
 
 def migrate(row, scan, output):
+    """Write one legacy film-only scan into the validated ionogram contract."""
     path = output / "usable" / f"{int(row['pair_number']):04d}__{row['pair_name']}.npz"
     ionogram.write(
         path,
@@ -131,6 +145,7 @@ def record(row, scan, target_valid, path, output):
 
 
 def main():
+    """Parse CLI options and prepare the strict usable 512x512 corpus."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     parser.add_argument("--phase1", type=Path, default=DEFAULT_PHASE1)
@@ -140,6 +155,8 @@ def main():
     parser.add_argument("--resume", action="store_true")
     args = parser.parse_args()
     rows = choose_rows(read_rows(args.dataset, args.phase1), args.limit, args.seed)
+    if not rows:
+        raise SystemExit("dataset contains no film-only rows")
     if args.output.exists() and any(args.output.iterdir()) and not args.resume:
         raise SystemExit(f"output is not empty: {args.output}")
 
@@ -147,7 +164,11 @@ def main():
     for index, row in enumerate(rows, 1):
         scan = ionogram.read(row["csa_path"])
         target_valid = validate_pair(row, scan)
-        path = args.output / "usable" / f"{int(row['pair_number']):04d}__{row['pair_name']}.npz"
+        path = (
+            args.output
+            / "usable"
+            / f"{int(row['pair_number']):04d}__{row['pair_name']}.npz"
+        )
         if not (args.resume and path.is_file()):
             path = migrate(row, scan, args.output)
         records.append(record(row, scan, target_valid, path, args.output))
@@ -155,7 +176,9 @@ def main():
             print(f"prepared {index}/{len(rows)}: {row['pair_name']}", flush=True)
 
     args.output.mkdir(parents=True, exist_ok=True)
-    with (args.output / "manifest.csv").open("w", newline="", encoding="utf-8") as handle:
+    with (args.output / "manifest.csv").open(
+        "w", newline="", encoding="utf-8"
+    ) as handle:
         writer = csv.DictWriter(handle, fieldnames=list(records[0]))
         writer.writeheader()
         writer.writerows(records)
@@ -170,7 +193,9 @@ def main():
         "train": sum(row["split"] == "train" for row in records),
         "held_out": sum(row["split"] == "held_out" for row in records),
     }
-    (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    (args.output / "summary.json").write_text(
+        json.dumps(summary, indent=2) + "\n", encoding="utf-8"
+    )
     print(json.dumps(summary, indent=2), flush=True)
 
 

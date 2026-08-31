@@ -1,3 +1,5 @@
+"""Tests for film geometry and exposed-region detection."""
+
 import numpy as np
 
 from isis_research.registration.film import Geometry, film_regions

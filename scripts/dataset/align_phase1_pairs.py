@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the CDF landmark aligner over a Phase 1 pair manifest."""
+"""Run landmark alignment for every pair in a manifest."""
 
 from __future__ import annotations
 
@@ -19,11 +19,13 @@ DEFAULT_OUT = ROOT / "outputs/landmarks/batch2000"
 
 
 def read_rows(path):
+    """Read a pair manifest as dictionaries."""
     with Path(path).open(newline="", encoding="utf-8") as handle:
         return list(csv.DictReader(handle))
 
 
 def main():
+    """Parse CLI options and align every pair in a manifest."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pairs", type=Path, default=DEFAULT_PAIRS)
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
@@ -32,7 +34,11 @@ def main():
         "--reuse",
         type=Path,
         action="append",
-        default=[ROOT / "outputs/landmarks/batch1500", ROOT / "outputs/landmarks/batch1000", ROOT / "outputs/landmarks/batch100"],
+        default=[
+            ROOT / "outputs/landmarks/batch1500",
+            ROOT / "outputs/landmarks/batch1000",
+            ROOT / "outputs/landmarks/batch100",
+        ],
         help="landmark directories to reuse before running the aligner",
     )
     args = parser.parse_args()
@@ -64,10 +70,15 @@ def main():
             str(figure),
             "--fast",
         ]
-        completed = subprocess.run(command, capture_output=True, text=True)
-        record = {"pair_name": row["pair_name"], "status": "ok" if completed.returncode == 0 else "failed"}
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+        record = {
+            "pair_name": row["pair_name"],
+            "status": "ok" if completed.returncode == 0 else "failed",
+        }
         if completed.returncode != 0:
-            record["error"] = (completed.stderr or completed.stdout).strip().splitlines()[-1]
+            record["error"] = (
+                (completed.stderr or completed.stdout).strip().splitlines()[-1]
+            )
         return record
 
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
@@ -77,8 +88,13 @@ def main():
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(results)
-    (args.out / "summary.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
-    counts = {status: sum(item["status"] == status for item in results) for status in sorted({item["status"] for item in results})}
+    (args.out / "summary.json").write_text(
+        json.dumps(results, indent=2), encoding="utf-8"
+    )
+    counts = {
+        status: sum(item["status"] == status for item in results)
+        for status in sorted({item["status"] for item in results})
+    }
     print(f"processed {len(results)} pairs: {counts}")
 
 

@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
-"""Run a reversible A/B test for marker leakage and contrast handling.
+"""Run an inference-only A/B test for marker leakage and contrast handling.
 
-The production checkpoints are read-only.  This experiment applies two
-inference-time changes to the existing Hybrid U-Net on the same fixed,
-reel-disjoint held-out benchmark:
-
-* marker suppression removes persistent per-column film offsets from the
-  input signal;
-* contrast calibration applies an affine mapping fitted only on training
-  scans, so prediction mean and contrast match the training NASA targets.
-
-The output directory is deliberately separate from the production reports.
+The production checkpoint is read-only. Results are written to a separate
+experiment directory.
 """
 
 from __future__ import annotations
@@ -27,17 +19,18 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.models import image_features  # noqa: E402
-from scripts.evaluation.benchmark_phase6_512_image_baselines import metric  # noqa: E402
-from scripts.evaluation.evaluate_phase6_512_image_model import load_model  # noqa: E402
-from scripts.training.train_phase6_512_image_model import load_sample, rows_for  # noqa: E402
-
+from isis_research import ionogram
+from isis_research.models import image_features
+from scripts.evaluation.benchmark_phase6_512_image_baselines import metric
+from scripts.evaluation.evaluate_phase6_512_image_model import load_model
+from scripts.training.train_phase6_512_image_model import load_sample, rows_for
 
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
 DEFAULT_GROUPS = ROOT / "outputs/calibration/phase1_pairs_6400/manifest.csv"
-DEFAULT_CHECKPOINT = ROOT / "outputs/evaluation/phase6_continual_models/hybrid_unet/best_model.pt"
+DEFAULT_CHECKPOINT = (
+    ROOT / "outputs/evaluation/phase6_continual_models/hybrid_unet/best_model.pt"
+)
 DEFAULT_BENCHMARK = ROOT / "outputs/evaluation/phase6_all_models_report/report.json"
 DEFAULT_OUTPUT = ROOT / "outputs/evaluation/phase6_experiments"
 MARKER_STRENGTH = 0.75
@@ -54,7 +47,9 @@ def load_experiment_sample(corpus, targets, row, target_rows):
     return signal, target, loss_mask, np.asarray(scan.valid_mask, dtype=bool)
 
 
-def suppress_markers(signal: np.ndarray, valid: np.ndarray, strength: float) -> np.ndarray:
+def suppress_markers(
+    signal: np.ndarray, valid: np.ndarray, strength: float
+) -> np.ndarray:
     """Remove persistent column offsets while preserving the 2-D trace shape."""
     values = np.where(valid, signal, np.nan)
     with warnings.catch_warnings(), np.errstate(all="ignore"):
@@ -90,7 +85,9 @@ def finish_stats(stats):
     return float(mean), float(np.sqrt(max(variance, 0.0)))
 
 
-def fit_calibration(model, rows, corpus, targets, target_rows, input_channels, torch, strength):
+def fit_calibration(
+    model, rows, corpus, targets, target_rows, input_channels, torch, strength
+):
     """Fit prediction -> NASA affine calibration on training-only scans."""
     raw = {"sum": 0.0, "sum_sq": 0.0, "count": 0}
     suppressed = {"sum": 0.0, "sum_sq": 0.0, "count": 0}
@@ -155,7 +152,9 @@ def summarize(records):
         ),
         "mean_bias": float(np.mean([item["bias"] for item in valid])),
         "mae_over_0_20": int(sum(item["mae"] > 0.20 for item in valid)),
-        "correlation_below_0_20": int(sum(item["correlation"] < 0.20 for item in valid)),
+        "correlation_below_0_20": int(
+            sum(item["correlation"] < 0.20 for item in valid)
+        ),
     }
 
 
@@ -174,11 +173,14 @@ def worst(records, count=10):
             "station": item["station"],
             "metrics": item["metrics"],
         }
-        for item in sorted(records, key=lambda value: value["metrics"]["mae"], reverse=True)[:count]
+        for item in sorted(
+            records, key=lambda value: value["metrics"]["mae"], reverse=True
+        )[:count]
     ]
 
 
 def main():
+    """Parse CLI options and run the inference-only A/B comparison."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--targets", type=Path, default=DEFAULT_TARGETS)
@@ -191,7 +193,9 @@ def main():
     if not 0.0 <= args.marker_strength <= 1.0:
         raise SystemExit("--marker-strength must be between 0 and 1")
     if args.output.exists() and any(args.output.iterdir()):
-        raise SystemExit(f"output is not empty: {args.output}; remove it to rerun this isolated experiment")
+        raise SystemExit(
+            f"output is not empty: {args.output}; remove it to rerun this isolated experiment"
+        )
 
     import torch
 
@@ -259,7 +263,11 @@ def main():
             "station": row.get("station") or "<blank>",
             "target_coverage": float(mask.mean()),
         }
-        per_pair[row["pair_name"]] = {"reel": metadata["reel"], "station": metadata["station"], "variants": {}}
+        per_pair[row["pair_name"]] = {
+            "reel": metadata["reel"],
+            "station": metadata["station"],
+            "variants": {},
+        }
         for name, prediction in candidates.items():
             item = {**metadata, "metrics": record_metrics(prediction, target, mask)}
             records[name].append(item)
@@ -271,7 +279,9 @@ def main():
         name: summarize([item["metrics"] for item in items])
         for name, items in records.items()
     }
-    baseline_mae = np.asarray([item["metrics"]["mae"] for item in records["baseline_hybrid"]])
+    baseline_mae = np.asarray(
+        [item["metrics"]["mae"] for item in records["baseline_hybrid"]]
+    )
     comparison = {}
     for name in variant_names[1:]:
         values = np.asarray([item["metrics"]["mae"] for item in records[name]])
@@ -281,7 +291,12 @@ def main():
             "mae_win_rate": float(np.mean(values < baseline_mae)),
             "delta_macro_correlation": float(
                 np.mean([item["metrics"]["correlation"] for item in records[name]])
-                - np.mean([item["metrics"]["correlation"] for item in records["baseline_hybrid"]])
+                - np.mean(
+                    [
+                        item["metrics"]["correlation"]
+                        for item in records["baseline_hybrid"]
+                    ]
+                )
             ),
             "delta_mean_prediction_std_ratio": float(
                 summaries[name]["mean_prediction_std_ratio"]
@@ -311,15 +326,19 @@ def main():
         "calibration": calibration,
         "summaries": summaries,
         "comparison_to_baseline": comparison,
-        "by_station": {name: stratified(items, "station") for name, items in records.items()},
+        "by_station": {
+            name: stratified(items, "station") for name, items in records.items()
+        },
         "by_reel": {name: stratified(items, "reel") for name, items in records.items()},
         "worst_cases": {name: worst(items) for name, items in records.items()},
         "per_pair": per_pair,
     }
     args.output.mkdir(parents=True, exist_ok=True)
-    (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (args.output / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
     lines = [
-        "# Phase 6 reversible A/B experiment",
+        "# Inference-only A/B comparison",
         "",
         f"This inference-only test compares the existing Hybrid U-Net with marker suppression and training-only contrast calibration on `{len(held_out)}` fixed held-out scans covering `{len(held_out_reels)}` reels.",
         "Production checkpoints and the main report were not modified.",
@@ -334,7 +353,15 @@ def main():
         lines.append(
             f"| {name} | {summary['macro_mae']:.4f} | {summary['macro_rmse']:.4f} | {summary['macro_correlation']:.4f} | {summary['mean_prediction_std_ratio']:.3f} | {summary['mean_bias']:+.4f} | {summary['mae_over_0_20']} |"
         )
-    lines.extend(["", "## Change from baseline", "", "| Variant | MAE change | MAE win rate | Correlation change | Std-ratio change |", "|---|---:|---:|---:|---:|"])
+    lines.extend(
+        [
+            "",
+            "## Change from baseline",
+            "",
+            "| Variant | MAE change | MAE win rate | Correlation change | Std-ratio change |",
+            "|---|---:|---:|---:|---:|",
+        ]
+    )
     for name, values in comparison.items():
         lines.append(
             f"| {name} | {values['delta_macro_mae']:+.4f} | {values['mae_win_rate']:.1%} | {values['delta_macro_correlation']:+.4f} | {values['delta_mean_prediction_std_ratio']:+.3f} |"
@@ -353,7 +380,17 @@ def main():
         ]
     )
     (args.output / "REPORT.md").write_text("\n".join(lines), encoding="utf-8")
-    print(json.dumps({"output": str(args.output), "summaries": summaries, "comparison": comparison}, indent=2), flush=True)
+    print(
+        json.dumps(
+            {
+                "output": str(args.output),
+                "summaries": summaries,
+                "comparison": comparison,
+            },
+            indent=2,
+        ),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

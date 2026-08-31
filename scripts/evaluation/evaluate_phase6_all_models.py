@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate all stored Phase 6 checkpoints on one reproducible held-out set."""
+"""Evaluate all registered checkpoints on one reproducible held-out set."""
 
 from __future__ import annotations
 
@@ -15,16 +15,17 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.evaluation.splits import group_summary  # noqa: E402
-from scripts.evaluation.benchmark_phase6_512_image_baselines import (  # noqa: E402
+from isis_research import ionogram
+from isis_research.evaluation.splits import group_summary
+from isis_research.models import image_features
+from scripts.evaluation.benchmark_phase6_512_image_baselines import (
     metric,
+)
+from scripts.evaluation.benchmark_phase6_512_image_baselines import (
     predictions as baseline_predictions,
 )
-from scripts.evaluation.evaluate_phase6_512_image_model import load_model  # noqa: E402
-from scripts.training.train_phase6_512_image_model import load_sample, rows_for  # noqa: E402
-from isis_research.models import image_features  # noqa: E402
-
+from scripts.evaluation.evaluate_phase6_512_image_model import load_model
+from scripts.training.train_phase6_512_image_model import load_sample, rows_for
 
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
@@ -81,6 +82,7 @@ def select_model_rows(rows, groups, limit: int, seed: int):
 
 
 def train_mean(corpus, targets, rows, target_rows):
+    """Compute the training-only scalar baseline target mean."""
     total = 0.0
     pixels = 0
     for row in rows:
@@ -95,6 +97,7 @@ def axis_profile(scan):
 
 
 def record_metrics(candidate, target, mask):
+    """Return image metrics plus prediction-to-target contrast ratio."""
     result = metric(candidate, target, mask)
     result["prediction_std_ratio"] = float(
         np.std(candidate[mask]) / max(np.std(target[mask]), 1e-9)
@@ -110,7 +113,9 @@ def summarize(records):
         "scans": len(valid),
         "macro_mae": float(np.mean([record["mae"] for record in valid])),
         "macro_rmse": float(np.mean([record["rmse"] for record in valid])),
-        "macro_correlation": float(np.mean([record["correlation"] for record in valid])),
+        "macro_correlation": float(
+            np.mean([record["correlation"] for record in valid])
+        ),
         "median_mae": float(np.median([record["mae"] for record in valid])),
         "p90_mae": float(np.percentile([record["mae"] for record in valid], 90)),
         "mean_prediction_std_ratio": float(
@@ -135,7 +140,9 @@ def worst(records, count=10):
             "axis_profile": record["axis_profile"],
             "metrics": record["metrics"],
         }
-        for record in sorted(records, key=lambda item: item["metrics"]["mae"], reverse=True)[:count]
+        for record in sorted(
+            records, key=lambda item: item["metrics"]["mae"], reverse=True
+        )[:count]
     ]
 
 
@@ -148,6 +155,7 @@ def group_uncertainty(records):
 def evaluate_baselines(
     corpus, targets, rows, target_rows, train_target_mean, include_expensive=True
 ):
+    """Evaluate non-learned baselines on the selected held-out rows."""
     results = {name: [] for name in BASELINE_NAMES}
     for row in rows:
         scan = ionogram.read_validated(corpus / row["csa_artifact"])
@@ -164,6 +172,7 @@ def evaluate_baselines(
 
 
 def main():
+    """Parse CLI options and compare all stored models on one split."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--targets", type=Path, default=DEFAULT_TARGETS)
@@ -234,8 +243,12 @@ def main():
     }
     for index, row in enumerate(model_rows, 1):
         scan = ionogram.read_validated(args.corpus / row["csa_artifact"])
-        film, target, target_mask = load_sample(args.corpus, args.targets, row, target_rows)
-        candidates = baseline_predictions(scan.intensity, scan.valid_mask, train_target_mean)
+        film, target, target_mask = load_sample(
+            args.corpus, args.targets, row, target_rows
+        )
+        candidates = baseline_predictions(
+            scan.intensity, scan.valid_mask, train_target_mean
+        )
         common = {
             "pair_name": row["pair_name"],
             "reel": groups[row["pair_name"]]["reel"],
@@ -275,9 +288,13 @@ def main():
             "worst_cases": worst(records),
         }
 
-    model_results = {name: model_report(records) for name, records in model_records.items()}
+    model_results = {
+        name: model_report(records) for name, records in model_records.items()
+    }
     baseline_results = {
-        "full_held_out": {name: summarize(values) for name, values in baseline_full.items()},
+        "full_held_out": {
+            name: summarize(values) for name, values in baseline_full.items()
+        },
         "model_benchmark_subset": {
             name: summarize(values) for name, values in baseline_subset.items()
         },
@@ -293,8 +310,12 @@ def main():
                 per_pair[name]["baselines"][baseline_name]["mae"] for name in per_pair
             ]
             comparison[model_name][baseline_name] = {
-                "mae_win_rate": float(np.mean(np.asarray(model_values) < np.asarray(baseline_values))),
-                "mae_improvement": float(np.mean(np.asarray(baseline_values) - np.asarray(model_values))),
+                "mae_win_rate": float(
+                    np.mean(np.asarray(model_values) < np.asarray(baseline_values))
+                ),
+                "mae_improvement": float(
+                    np.mean(np.asarray(baseline_values) - np.asarray(model_values))
+                ),
             }
 
     report = {
@@ -317,21 +338,26 @@ def main():
             "pair_names": [row["pair_name"] for row in model_rows],
         },
         "train_mean_target": float(train_target_mean),
-        "checkpoints": {name: {"path": item["path"], "model": item["checkpoint"].get("model")} for name, item in models.items()},
+        "checkpoints": {
+            name: {"path": item["path"], "model": item["checkpoint"].get("model")}
+            for name, item in models.items()
+        },
         "baselines": baseline_results,
         "models": model_results,
         "model_vs_baseline": comparison,
         "per_pair": per_pair,
     }
     args.output.mkdir(parents=True, exist_ok=True)
-    (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (args.output / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
 
     ranking = sorted(
         ((name, result["summary"]) for name, result in model_results.items()),
         key=lambda item: item[1]["macro_mae"],
     )
     lines = [
-        "# Phase 6 model evaluation report",
+        "# Registered-model evaluation report",
         "",
         f"Generated with seed `{args.seed}` on `{len(model_rows)}` native 512×512 held-out scans covering `{report['model_benchmark']['reels']}` reels.",
         "The held-out split contains 1,137 scans across 40 reels and is disjoint from training by reel. Baselines were also run over all 1,137 held-out scans.",
@@ -345,7 +371,15 @@ def main():
         lines.append(
             f"| {name} | {summary['macro_mae']:.4f} | {summary['macro_rmse']:.4f} | {summary['macro_correlation']:.4f} | {summary['median_mae']:.4f} | {summary['p90_mae']:.4f} | {summary['mean_prediction_std_ratio']:.3f} |"
         )
-    lines.extend(["", "## Baselines", "", "| Baseline | Full held-out MAE | Full held-out correlation | Benchmark-subset MAE | Benchmark-subset correlation |", "|---|---:|---:|---:|---:|"])
+    lines.extend(
+        [
+            "",
+            "## Baselines",
+            "",
+            "| Baseline | Full held-out MAE | Full held-out correlation | Benchmark-subset MAE | Benchmark-subset correlation |",
+            "|---|---:|---:|---:|---:|",
+        ]
+    )
     for name in BASELINE_NAMES:
         full = baseline_results["full_held_out"].get(name)
         subset = baseline_results["model_benchmark_subset"][name]
@@ -359,22 +393,39 @@ def main():
             if full and full.get("macro_correlation") is not None
             else "subset only"
         )
-        lines.append(f"| {name} | {full_mae} | {full_corr} | {subset['macro_mae']:.4f} | {subset['macro_correlation']:.4f} |")
+        lines.append(
+            f"| {name} | {full_mae} | {full_corr} | {subset['macro_mae']:.4f} | {subset['macro_correlation']:.4f} |"
+        )
     lines.extend(["", "## Worst cases", ""])
     for name, _ in ranking:
         lines.append(f"### {name}")
         for case in model_results[name]["worst_cases"][:5]:
             metrics = case["metrics"]
-            lines.append(f"- `{case['pair_name']}` — reel `{case['reel']}`, station `{case['station']}`, MAE `{metrics['mae']:.4f}`, correlation `{metrics['correlation']:.4f}`")
+            lines.append(
+                f"- `{case['pair_name']}` — reel `{case['reel']}`, station `{case['station']}`, MAE `{metrics['mae']:.4f}`, correlation `{metrics['correlation']:.4f}`"
+            )
         lines.append("")
-    lines.extend([
-        "## Interpretation",
-        "",
-        "Model metrics are native-resolution results on the fixed 128-scan benchmark. Baseline full-held-out results use all 1,137 held-out scans. The benchmark is intentionally reel-balanced because native CPU inference makes a full eight-model pass expensive; `report.json` contains the exact pair list and all stratified results.",
-        "",
-    ])
+    lines.extend(
+        [
+            "## Interpretation",
+            "",
+            "Model metrics are native-resolution results on the fixed 128-scan benchmark. Baseline full-held-out results use all 1,137 held-out scans. The benchmark is intentionally reel-balanced because native CPU inference makes a full eight-model pass expensive; `report.json` contains the exact pair list and all stratified results.",
+            "",
+        ]
+    )
     (args.output / "REPORT.md").write_text("\n".join(lines), encoding="utf-8")
-    print(json.dumps({"output": str(args.output), "model_scans": len(model_rows), "models": list(models), "ranking": ranking}, indent=2), flush=True)
+    print(
+        json.dumps(
+            {
+                "output": str(args.output),
+                "model_scans": len(model_rows),
+                "models": list(models),
+                "ranking": ranking,
+            },
+            indent=2,
+        ),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

@@ -1,16 +1,16 @@
 # FINAL ISIS
 
-FINAL ISIS turns a scanned Canadian Space Agency (CSA) ISIS-2 ionogram into a
-calibrated digital ionogram. Its image models can then estimate an amplitude
-image and export that estimate in a NASA-CDF-like format.
+Convert a scanned Canadian Space Agency (CSA) ISIS-2 ionogram into a
+calibrated digital ionogram. The included image models can then estimate an
+amplitude image and export it in a NASA-CDF-like format.
 
-This is a research proof of concept. The exported amplitude is a model
-prediction, not a measured NASA observation. The project does not currently
-recover physical electron-density profiles.
+This is research software. The exported amplitude is a model prediction, not a
+measured NASA observation. The project does not recover electron-density
+profiles.
 
-## Start here
+## Quick start
 
-Install the project and run the included verified example:
+Use Python 3.12. From the repository root:
 
 ```sh
 python -m venv .venv
@@ -24,56 +24,53 @@ python scripts/pipeline/run_scan.py \
   --diagnostics
 ```
 
-The command runs the complete single-scan path and writes a calibrated
-`isis.ionogram.v1` artifact, a model prediction, a model-derived CDF-like file,
-`summary.json`, and static diagnostics.
+The command writes a calibrated `isis.ionogram.v1` artifact, a model
+prediction, a model-derived CDF-like file, `summary.json`, and optional
+diagnostic images.
 
-For the explanation of the terms and the meaning of each output, read
-[`docs/OVERVIEW.md`](docs/OVERVIEW.md). For the steps, expected files, and
-notebook instructions, read [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md).
-
-## Choose a task
+## Read next
 
 - [Understand the project](docs/OVERVIEW.md)
-- [Run one scan](docs/GETTING_STARTED.md)
-- [Follow the pipeline stage by stage](docs/PIPELINE.md)
+- [Run a scan and inspect its output](docs/GETTING_STARTED.md)
+- [See every command](docs/COMMANDS.md)
+- [Follow the pipeline](docs/PIPELINE.md)
 - [Use the notebooks](notebooks/README.md)
-- [Build catalogs, download pairs, train, or evaluate](docs/DATA_AND_TRAINING.md)
-- [Understand the artifact and CDF contracts](docs/product_contract.md)
-- [Fix common setup and output problems](docs/TROUBLESHOOTING.md)
-- [Read the current research status and limitations](PROJECT_HANDOFF.md)
+- [Build data and train models](docs/DATA_AND_TRAINING.md)
+- [Read the file contracts](docs/product_contract.md)
+- [Troubleshoot a run](docs/TROUBLESHOOTING.md)
+- [Read the research status](PROJECT_HANDOFF.md)
+- [Acknowledgments](ACKNOWLEDGMENTS.md)
 
 ## What is included
 
-The repository contains:
+This repository contains:
 
 - the single-scan calibration, warping, inference, and export pipeline;
-- three checked-in finalist model checkpoints;
-- CSA and NASA sample files;
-- three explanatory notebooks;
-- CSA/NASA catalog and candidate-matching builders;
-- candidate download and static review tools;
-- training-target, training, evaluation, and experiment scripts; and
+- three model checkpoints for inference;
+- small CSA and NASA sample files;
+- three notebooks that show the main workflow;
+- catalog, matching, download, and review tools;
+- training, evaluation, and experiment scripts; and
 - reusable Python modules and tests.
 
 The complete historical CSA/NASA archive and generated training corpus are not
-checked in. The dataset tools can download or rebuild them when a larger
-training or evaluation run is needed.
+included. The dataset tools can rebuild them when a larger training or
+evaluation run is needed.
 
 ## Repository map
 
 ```text
-src/isis_research/  reusable image, geometry, artifact, NASA, and model code
-scripts/pipeline/   one-scan processing stages and runner
-scripts/dataset/    catalogs, matching, downloading, calibration, and packaging
-scripts/training/   corpus/target preparation and model training
-scripts/evaluation/ scoring, comparisons, and static galleries
-scripts/experiments/retained alternative experiments
-notebooks/          visual walkthroughs of the supported workflow
-configs/            calibration and model registrations
-models/             checked-in inference checkpoints
-data/               small examples and external-data placeholders
-tests/              automated checks
+src/isis_research/   image, geometry, artifact, NASA, and model code
+scripts/pipeline/    one-scan processing commands
+scripts/dataset/     catalog, matching, download, and packaging commands
+scripts/training/    dataset preparation and model training
+scripts/evaluation/  scoring, comparison, and gallery commands
+scripts/experiments/ alternative model experiments
+notebooks/           visual walkthroughs
+configs/             calibration and model settings
+models/              inference checkpoints
+data/                small examples and external-data placeholders
+tests/               automated checks
 ```
 
 ## Checks
@@ -81,10 +78,21 @@ tests/              automated checks
 From the repository root:
 
 ```sh
-pytest -q
+python -m pytest -p no:cacheprovider -q
 python -m compileall -q src scripts tests
+ruff format --check src scripts tests
+ruff check src scripts tests
 ```
 
-For a problem that is not covered by the quick-start guide, begin with
-[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) and then use the relevant
-script's `--help` output.
+For a problem not covered here, see
+[`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md). Each command also
+provides its current options with `--help`.
+
+## License
+
+Apache License 2.0 — see [`LICENSE`](LICENSE).
+
+The Apache License covers the code, notebooks, configuration, and model
+checkpoints. The redistributed CSA scans under [`data/raw/`](data/raw/) and the
+NASA CDF references under [`data/samples/`](data/samples/) keep their
+publishers' terms; see [`NOTICE`](NOTICE).

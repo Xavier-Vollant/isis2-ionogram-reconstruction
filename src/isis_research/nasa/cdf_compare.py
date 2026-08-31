@@ -54,17 +54,19 @@ def _inspect_cdf(cdf) -> dict:
         "variable_count": len(variables),
         "variables": variables,
         "global_attributes": sorted(cdf.globalattsget()),
-        "fields": {name: _value_summary(np.asarray(cdf.varget(name))) for name in variables},
+        "fields": {
+            name: _value_summary(np.asarray(cdf.varget(name))) for name in variables
+        },
     }
 
 
 def inspect_cdf(path) -> dict:
-    """Read the file structure and compact value summaries without changing it."""
+    """Return the file structure and compact value summaries."""
     return _inspect_cdf(cdflib.CDF(str(Path(path))))
 
 
 def compare_cdf_content(nasa_path, model_path) -> dict:
-    """Compare variable sets, metadata, axes, amplitudes, and global attributes."""
+    """Compare variables, metadata, axes, amplitudes, and global attributes."""
     nasa_cdf = cdflib.CDF(str(Path(nasa_path)))
     model_cdf = cdflib.CDF(str(Path(model_path)))
     nasa = _inspect_cdf(nasa_cdf)
@@ -79,16 +81,31 @@ def compare_cdf_content(nasa_path, model_path) -> dict:
             "name": name,
             "nasa": nasa_field,
             "model": model_field,
-            "same_shape": bool(nasa_field and model_field and nasa_field["shape"] == model_field["shape"]),
-            "same_dtype": bool(nasa_field and model_field and nasa_field["dtype"] == model_field["dtype"]),
+            "same_shape": bool(
+                nasa_field
+                and model_field
+                and nasa_field["shape"] == model_field["shape"]
+            ),
+            "same_dtype": bool(
+                nasa_field
+                and model_field
+                and nasa_field["dtype"] == model_field["dtype"]
+            ),
         }
         if nasa_field and model_field and item["same_shape"]:
             nasa_value = np.asarray(nasa_cdf.varget(name))
             model_value = np.asarray(model_cdf.varget(name))
-            if np.issubdtype(nasa_value.dtype, np.number) and np.issubdtype(model_value.dtype, np.number):
+            if np.issubdtype(nasa_value.dtype, np.number) and np.issubdtype(
+                model_value.dtype, np.number
+            ):
                 a = nasa_value.astype(float, copy=False)
                 b = model_value.astype(float, copy=False)
-                finite = np.isfinite(a) & np.isfinite(b) & (np.abs(a) < 1e29) & (np.abs(b) < 1e29)
+                finite = (
+                    np.isfinite(a)
+                    & np.isfinite(b)
+                    & (np.abs(a) < 1e29)
+                    & (np.abs(b) < 1e29)
+                )
                 if np.any(finite):
                     residual = b[finite] - a[finite]
                     item["numeric_difference"] = {
@@ -98,7 +115,9 @@ def compare_cdf_content(nasa_path, model_path) -> dict:
                         "rmse": float(np.sqrt(np.mean(residual**2))),
                     }
             else:
-                item["same_values"] = bool(nasa_field["sha256"] == model_field["sha256"])
+                item["same_values"] = bool(
+                    nasa_field["sha256"] == model_field["sha256"]
+                )
         fields.append(item)
 
     nasa_attributes = set(nasa["global_attributes"])

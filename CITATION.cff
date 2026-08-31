@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "FINAL ISIS"
+abstract: >-
+  Research software that converts scanned Canadian Space Agency ISIS-2
+  ionograms into calibrated digital ionograms, and estimates an amplitude
+  image that is exported in a NASA-CDF-like format. The exported amplitude
+  is a model prediction, not a measured NASA observation.
+type: software
+authors:
+  - family-names: Vollant
+    given-names: Xavier
+version: "0.1.0"
+date-released: "2026-08-31"
+license: Apache-2.0
+repository-code: "https://github.com/Xavier-Vollant/Final-ISIS"
+keywords:
+  - ionogram
+  - ionosphere
+  - ISIS-2
+  - topside sounder
+  - image calibration

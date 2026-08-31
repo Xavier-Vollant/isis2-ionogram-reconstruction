@@ -1,3 +1,5 @@
+"""Tests for structural and numeric CDF comparison reporting."""
+
 import json
 
 import numpy as np

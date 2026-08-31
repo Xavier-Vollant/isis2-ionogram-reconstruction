@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Fine-tune the best Phase 6 model with an explicit contrast-aware loss.
+"""Fine-tune the normalized residual model with a contrast-aware loss.
 
-This writes an isolated candidate checkpoint.  The existing Normalized
-Residual U-Net checkpoint is used only as initialization and is never changed.
+The initial checkpoint is read-only; a new candidate checkpoint is written.
 """
 
 from __future__ import annotations
@@ -17,8 +16,8 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research.models import image_features, model_constructor  # noqa: E402
-from scripts.training.continual_train_phase6_models import (  # noqa: E402
+from isis_research.models import image_features, model_constructor
+from scripts.training.continual_train_phase6_models import (
     DEFAULT_CORPUS,
     DEFAULT_TARGETS,
     load_sample,
@@ -28,13 +27,15 @@ from scripts.training.continual_train_phase6_models import (  # noqa: E402
     usable_rows,
 )
 
-
-DEFAULT_INITIAL = ROOT / "outputs/evaluation/phase6_continual_models/norm_residual_unet/best_model.pt"
+DEFAULT_INITIAL = (
+    ROOT / "outputs/evaluation/phase6_continual_models/norm_residual_unet/best_model.pt"
+)
 DEFAULT_OUTPUT = ROOT / "outputs/evaluation/phase6_contrast_aware_norm_residual"
 DEFAULT_GROUPS = ROOT / "outputs/calibration/phase1_pairs_6400/manifest.csv"
 
 
 def contrast_loss(output, target, masks, torch):
+    """Return the batch contrast penalty over pixels with known targets."""
     terms = []
     for prediction, expected, mask in zip(output, target, masks):
         if int(mask.sum()) > 1:
@@ -58,6 +59,7 @@ def correlation(left, right):
 
 
 def validate(model, refs, input_channels, batch_size, torch):
+    """Evaluate a model on references and return macro image metrics."""
     model.eval()
     records = []
     with torch.inference_mode():
@@ -68,7 +70,9 @@ def validate(model, refs, input_channels, batch_size, torch):
             output = torch.sigmoid(
                 model(
                     torch.from_numpy(
-                        np.stack([image_features(film, input_channels) for film in films])
+                        np.stack(
+                            [image_features(film, input_channels) for film in films]
+                        )
                     )
                 )
             ).numpy()
@@ -100,6 +104,7 @@ def validate(model, refs, input_channels, batch_size, torch):
 
 
 def main():
+    """Parse CLI options and train the contrast-aware model."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--targets", type=Path, default=DEFAULT_TARGETS)
@@ -118,13 +123,18 @@ def main():
     args = parser.parse_args()
     if args.output.exists() and any(args.output.iterdir()):
         raise SystemExit(f"output is not empty: {args.output}")
-    if args.epochs < 1 or args.patch_size < 1 or args.patches_per_scan < 1 or args.batch_size < 1:
+    if (
+        args.epochs < 1
+        or args.patch_size < 1
+        or args.patches_per_scan < 1
+        or args.batch_size < 1
+    ):
         raise SystemExit("training parameters must be positive")
     if args.contrast_weight < 0 or not 0.0 <= args.validation_fraction < 1.0:
         raise SystemExit("contrast weight or validation fraction is invalid")
 
     import torch
-    import torch.nn.functional as functional
+    from torch.nn import functional
 
     torch.manual_seed(args.seed)
     torch.set_num_threads(min(4, torch.get_num_threads()))
@@ -136,7 +146,9 @@ def main():
 
     checkpoint = torch.load(args.initial, map_location="cpu")
     if checkpoint.get("model") != "norm_residual_unet":
-        raise SystemExit(f"expected a norm_residual_unet checkpoint, got {checkpoint.get('model')!r}")
+        raise SystemExit(
+            f"expected a norm_residual_unet checkpoint, got {checkpoint.get('model')!r}"
+        )
     model = model_constructor("norm_residual_unet")(1)
     model.load_state_dict(checkpoint["state_dict"])
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
@@ -205,7 +217,8 @@ def main():
             validation["macro_mae"] < best_validation["macro_mae"] - 1e-6
             or (
                 abs(validation["macro_mae"] - best_validation["macro_mae"]) <= 1e-6
-                and validation["macro_correlation"] > best_validation["macro_correlation"]
+                and validation["macro_correlation"]
+                > best_validation["macro_correlation"]
             )
         )
         if better:
@@ -250,7 +263,9 @@ def main():
         "best_validation": best_validation,
         "production_checkpoint_changed": False,
     }
-    (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (args.output / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report, indent=2), flush=True)
 
 

@@ -1,23 +1,11 @@
 #!/usr/bin/env python
-"""Rank CSA-NASA ionogram candidates and write the strongest ones.
+"""Rank possible CSA/NASA ionogram pairs from archive metadata.
 
-A candidate pairs one CSA film scan with one NASA digital ionogram that claim
-the same station and the same instant. Three independent quantities decide how
-good it is:
-
-  dt_seconds      gap between the CSA timestamp and the NASA frame-sync time
-  position_km     disagreement between two independently derived satellite
-                  positions: CSA's TLE propagation (orbitcheck) and NASA's
-                  telemetry-derived coordinates at frame sync
-  margin_seconds  gap to the *next* nearest NASA ionogram, so a pair that could
-                  equally well be its neighbour is visibly ambiguous
-
-position_km is the part that makes this more than a timestamp restatement: the
-two archives derive it from unrelated sources, so agreement is corroboration.
-
-These remain candidates from metadata coincidence. Nothing here is a confirmed
-scientific correspondence, and no ionogram pixels have been compared.
+The scores use time, position, and the gap to the next possible NASA record.
+The results are candidates only; this command does not compare image pixels or
+confirm a scientific match.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -29,7 +17,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-from isis_research.nasa.stations import separation_km  # noqa: E402
+from isis_research.nasa.stations import separation_km
 
 ROOT = Path(__file__).resolve().parents[2]
 PROCESSED = ROOT / "data" / "processed"
@@ -88,6 +76,7 @@ COLUMNS = [
 
 
 def as_float(value):
+    """Convert a CSV value to float, or return ``None`` when it is missing."""
     try:
         return float(value)
     except (TypeError, ValueError):
@@ -144,6 +133,7 @@ def nearest_two(entries, target):
 
 
 def build(limit, yields=None, strategy="reel"):
+    """Build and rank CSA/NASA candidates under the requested quota strategy."""
     buckets = load_nasa()
     stats = Counter()
     candidates = []
@@ -444,6 +434,7 @@ SELECTORS = {"station": select_by_station, "reel": select_by_reel}
 
 
 def write(chosen, strategy):
+    """Write selected candidate rows to a strategy-specific CSV file."""
     # The strategy is in the name so two selections of the same size do not
     # overwrite one another - the point of keeping both is comparing them.
     path = PROCESSED / f"candidate_matches_top{len(chosen)}_{strategy}.csv"
@@ -499,6 +490,7 @@ def write(chosen, strategy):
 
 
 def main():
+    """Parse CLI options and write the selected CSA/NASA candidates."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument(

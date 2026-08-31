@@ -1,6 +1,9 @@
+"""Tests for image loading and shared dataset preparation."""
+
 import json
 
 import numpy as np
+import pytest
 from PIL import Image
 
 from isis_research.image_io import load_image
@@ -16,6 +19,11 @@ def test_load_image_returns_grayscale_float_array(tmp_path):
     assert result.dtype == float
     assert result.shape == (2, 2)
     assert result[0, 1] == 128.0
+
+
+def test_load_image_reports_a_missing_file(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        load_image(tmp_path / "missing.png")
 
 
 def test_landmark_dataset_uses_shared_image_loader(tmp_path):

@@ -1,3 +1,5 @@
+"""Tests for frequency-axis fitting and coverage warnings."""
+
 import numpy as np
 
 from scripts.pipeline.fit_frequency_axis import fit_reference
@@ -15,9 +17,7 @@ def test_frequency_axis_is_monotonic_piecewise_mapping():
     assert result["status"] == "usable"
     assert result["mapping"] == "monotonic_piecewise_linear"
     assert result["matched_marker_count"] == 8
-    assert np.all(
-        np.diff([item["film_column"] for item in result["breakpoints"]]) > 0
-    )
+    assert np.all(np.diff([item["film_column"] for item in result["breakpoints"]]) > 0)
     assert np.all(
         np.diff([item["frequency_mhz"] for item in result["breakpoints"]]) > 0
     )

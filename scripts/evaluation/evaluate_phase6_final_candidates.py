@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate final Phase 6 candidates on a short, reel-balanced held-out set."""
+"""Evaluate selected model candidates on a reel-balanced held-out set."""
 
 from __future__ import annotations
 
@@ -14,15 +14,14 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research.models import image_features  # noqa: E402
-from scripts.evaluation.evaluate_phase6_all_models import select_model_rows  # noqa: E402
-from scripts.evaluation.evaluate_phase6_512_image_model import load_model  # noqa: E402
-from scripts.experiments.run_phase6_experiment_ab import (  # noqa: E402
+from isis_research.models import image_features
+from scripts.evaluation.evaluate_phase6_512_image_model import load_model
+from scripts.evaluation.evaluate_phase6_all_models import select_model_rows
+from scripts.experiments.run_phase6_experiment_ab import (
     load_experiment_sample,
     record_metrics,
 )
-from scripts.training.train_phase6_512_image_model import rows_for  # noqa: E402
-
+from scripts.training.train_phase6_512_image_model import rows_for
 
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
@@ -30,10 +29,14 @@ DEFAULT_GROUPS = ROOT / "outputs/calibration/phase1_pairs_6400/manifest.csv"
 DEFAULT_OUTPUT = ROOT / "outputs/evaluation/phase6_final_candidates_balanced_256"
 DEFAULT_LIMIT = 256
 DEFAULT_CHECKPOINTS = {
-    "contrast_aware_norm_residual": ROOT / "outputs/evaluation/phase6_contrast_aware_norm_residual/best_model.pt",
-    "norm_residual_unet": ROOT / "outputs/evaluation/phase6_continual_models/norm_residual_unet/best_model.pt",
-    "hybrid_unet": ROOT / "outputs/evaluation/phase6_continual_models/hybrid_unet/best_model.pt",
-    "residual_unet": ROOT / "outputs/evaluation/phase6_continual_models/residual_unet/best_model.pt",
+    "contrast_aware_norm_residual": ROOT
+    / "outputs/evaluation/phase6_contrast_aware_norm_residual/best_model.pt",
+    "norm_residual_unet": ROOT
+    / "outputs/evaluation/phase6_continual_models/norm_residual_unet/best_model.pt",
+    "hybrid_unet": ROOT
+    / "outputs/evaluation/phase6_continual_models/hybrid_unet/best_model.pt",
+    "residual_unet": ROOT
+    / "outputs/evaluation/phase6_continual_models/residual_unet/best_model.pt",
 }
 MODEL_LABELS = {
     "contrast_aware_norm_residual": "Contrast-aware Normalized Residual U-Net",
@@ -62,17 +65,26 @@ def finish_stats(stats):
 
 
 def predict_batch(model, signals, input_channels, torch):
+    """Run one batched forward pass and return unit-range predictions."""
     features = np.stack([image_features(signal, input_channels) for signal in signals])
     with torch.inference_mode():
-        return torch.sigmoid(model(torch.from_numpy(features))).cpu().numpy().astype(np.float32)
+        return (
+            torch.sigmoid(model(torch.from_numpy(features)))
+            .cpu()
+            .numpy()
+            .astype(np.float32)
+        )
 
 
 def fit_calibration(model, input_channels, samples, batch_size, torch):
+    """Fit an affine output calibration from the supplied reference samples."""
     prediction = {"sum": 0.0, "sum_sq": 0.0, "count": 0}
     target = {"sum": 0.0, "sum_sq": 0.0, "count": 0}
     for start in range(0, len(samples), batch_size):
         batch = samples[start : start + batch_size]
-        outputs = predict_batch(model, [sample[0] for sample in batch], input_channels, torch)
+        outputs = predict_batch(
+            model, [sample[0] for sample in batch], input_channels, torch
+        )
         for output, (_, target_image, mask, _) in zip(outputs, batch):
             update_stats(prediction, output[mask])
             update_stats(target, target_image[mask])
@@ -91,6 +103,7 @@ def fit_calibration(model, input_channels, samples, batch_size, torch):
 
 
 def calibrated(output, calibration):
+    """Apply an affine calibration and clip output to unit range."""
     return np.clip(
         float(calibration["scale"]) * output + float(calibration["bias"]), 0.0, 1.0
     ).astype(np.float32)
@@ -112,7 +125,9 @@ def summarize(metrics):
         ),
         "mean_bias": float(np.mean([item["bias"] for item in values])),
         "mae_over_0_20": int(sum(item["mae"] > 0.20 for item in values)),
-        "correlation_below_0_20": int(sum(item["correlation"] < 0.20 for item in values)),
+        "correlation_below_0_20": int(
+            sum(item["correlation"] < 0.20 for item in values)
+        ),
     }
 
 
@@ -127,20 +142,26 @@ def confidence_summary(per_pair, model_name, confidence_bin):
 
 def save_partial(path, per_pair):
     path.write_text(
-        json.dumps({"schema": "isis.phase6_final_candidates_partial.v1", "per_pair": per_pair}, indent=2)
+        json.dumps(
+            {"schema": "isis.phase6_final_candidates_partial.v1", "per_pair": per_pair},
+            indent=2,
+        )
         + "\n",
         encoding="utf-8",
     )
 
 
 def main():
+    """Parse CLI options and evaluate the final candidate checkpoints."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--targets", type=Path, default=DEFAULT_TARGETS)
     parser.add_argument("--groups", type=Path, default=DEFAULT_GROUPS)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument("--checkpoint", action="append", metavar="NAME=PATH")
-    parser.add_argument("--only", action="append", help="evaluate only these checkpoint names")
+    parser.add_argument(
+        "--only", action="append", help="evaluate only these checkpoint names"
+    )
     parser.add_argument("--checkpoint-every", type=int, default=16)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
@@ -162,7 +183,9 @@ def main():
             raise SystemExit(f"unknown --only model(s): {', '.join(missing)}")
         checkpoints = {name: checkpoints[name] for name in args.only}
     if args.output.exists() and any(args.output.iterdir()) and not args.resume:
-        raise SystemExit(f"output is not empty: {args.output}; use --resume or remove it")
+        raise SystemExit(
+            f"output is not empty: {args.output}; use --resume or remove it"
+        )
 
     import torch
 
@@ -204,7 +227,11 @@ def main():
         }
     calibrations = {
         name: fit_calibration(
-            item["model"], item["input_channels"], calibration_samples, args.batch_size, torch
+            item["model"],
+            item["input_channels"],
+            calibration_samples,
+            args.batch_size,
+            torch,
         )
         for name, item in models.items()
     }
@@ -228,7 +255,10 @@ def main():
         outputs_by_model = {}
         for model_name, item in models.items():
             before_batch = predict_batch(
-                item["model"], [sample[0] for sample in samples], item["input_channels"], torch
+                item["model"],
+                [sample[0] for sample in samples],
+                item["input_channels"],
+                torch,
             )
             before_by_model[model_name] = before_batch
             outputs_by_model[model_name] = [
@@ -237,7 +267,10 @@ def main():
         for local, row in enumerate(batch_rows):
             name = row["pair_name"]
             _, target, loss_mask, input_valid = samples[local]
-            outputs = {model_name: values[local] for model_name, values in outputs_by_model.items()}
+            outputs = {
+                model_name: values[local]
+                for model_name, values in outputs_by_model.items()
+            }
             metrics = {}
             for model_name in models:
                 after = outputs[model_name]
@@ -248,7 +281,9 @@ def main():
                 }
             ensemble = np.stack(list(outputs.values()))
             valid_disagreement = np.std(ensemble, axis=0)[input_valid]
-            disagreement = float(np.mean(valid_disagreement)) if valid_disagreement.size else 1.0
+            disagreement = (
+                float(np.mean(valid_disagreement)) if valid_disagreement.size else 1.0
+            )
             per_pair[name] = {
                 "reel": group_rows[name]["reel"],
                 "station": row.get("station") or "<blank>",
@@ -260,7 +295,10 @@ def main():
                 },
             }
         completed = len(per_pair)
-        if completed == len(held_out) or completed % args.checkpoint_every < args.batch_size:
+        if (
+            completed == len(held_out)
+            or completed % args.checkpoint_every < args.batch_size
+        ):
             save_partial(partial_path, per_pair)
             print(f"evaluated {completed}/{len(held_out)}", flush=True)
 
@@ -270,16 +308,19 @@ def main():
         outputs_by_model = {}
         for model_name, item in models.items():
             before_batch = predict_batch(
-                item["model"], [sample[0] for sample in batch], item["input_channels"], torch
+                item["model"],
+                [sample[0] for sample in batch],
+                item["input_channels"],
+                torch,
             )
             outputs_by_model[model_name] = [
                 calibrated(before, calibrations[model_name]) for before in before_batch
             ]
         for local, (_, _, _, input_valid) in enumerate(batch):
-            outputs = np.stack(
-                [values[local] for values in outputs_by_model.values()]
+            outputs = np.stack([values[local] for values in outputs_by_model.values()])
+            train_disagreements.append(
+                float(np.mean(np.std(outputs, axis=0)[input_valid]))
             )
-            train_disagreements.append(float(np.mean(np.std(outputs, axis=0)[input_valid])))
     disagreement_p90 = float(np.percentile(train_disagreements, 90))
     disagreement_median = float(np.median(train_disagreements))
     disagreement_scale = max(disagreement_p90, 1e-6)
@@ -293,7 +334,11 @@ def main():
         item["confidence"].update(
             {
                 "score": score,
-                "bin": "high" if score >= 0.55 else "medium" if score >= 0.45 else "low",
+                "bin": "high"
+                if score >= 0.55
+                else "medium"
+                if score >= 0.45
+                else "low",
                 "flag_for_review": bool(flag),
                 "flag_reasons": [
                     reason
@@ -309,10 +354,18 @@ def main():
 
     model_reports = {}
     for name, item in models.items():
-        before = summarize([value["models"][name]["before"] for value in per_pair.values()])
-        after = summarize([value["models"][name]["after"] for value in per_pair.values()])
-        before_values = np.asarray([value["models"][name]["before"]["mae"] for value in per_pair.values()])
-        after_values = np.asarray([value["models"][name]["after"]["mae"] for value in per_pair.values()])
+        before = summarize(
+            [value["models"][name]["before"] for value in per_pair.values()]
+        )
+        after = summarize(
+            [value["models"][name]["after"] for value in per_pair.values()]
+        )
+        before_values = np.asarray(
+            [value["models"][name]["before"]["mae"] for value in per_pair.values()]
+        )
+        after_values = np.asarray(
+            [value["models"][name]["after"]["mae"] for value in per_pair.values()]
+        )
         model_reports[name] = {
             "label": item["label"],
             "checkpoint": item["path"],
@@ -324,8 +377,13 @@ def main():
                 "delta_macro_mae": float(after["macro_mae"] - before["macro_mae"]),
                 "mae_improvement": float(np.mean(before_values - after_values)),
                 "mae_win_rate": float(np.mean(after_values < before_values)),
-                "delta_macro_correlation": float(after["macro_correlation"] - before["macro_correlation"]),
-                "delta_std_ratio": float(after["mean_prediction_std_ratio"] - before["mean_prediction_std_ratio"]),
+                "delta_macro_correlation": float(
+                    after["macro_correlation"] - before["macro_correlation"]
+                ),
+                "delta_std_ratio": float(
+                    after["mean_prediction_std_ratio"]
+                    - before["mean_prediction_std_ratio"]
+                ),
             },
             "confidence_bins": {
                 confidence_bin: confidence_summary(per_pair, name, confidence_bin)
@@ -333,7 +391,9 @@ def main():
             },
         }
 
-    best_model = min(model_reports, key=lambda name: model_reports[name]["after"]["macro_mae"])
+    best_model = min(
+        model_reports, key=lambda name: model_reports[name]["after"]["macro_mae"]
+    )
     flagged = sorted(
         (
             {
@@ -377,16 +437,20 @@ def main():
         },
         "per_pair": per_pair,
     }
-    (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (args.output / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
     lines = [
-        "# Phase 6 final candidate balanced held-out evaluation",
+        "# Balanced held-out evaluation of registered models",
         "",
         f"Evaluated `{len(models)}` final candidates on all `{len(held_out)}` held-out scans across `{len(held_out_reels)}` reels. No model weights were modified.",
         "",
         "| Model | Before MAE | After MAE | Δ MAE | After correlation | After std ratio | MAE win rate |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]
-    for name, item in sorted(model_reports.items(), key=lambda pair: pair[1]["after"]["macro_mae"]):
+    for name, item in sorted(
+        model_reports.items(), key=lambda pair: pair[1]["after"]["macro_mae"]
+    ):
         lines.append(
             f"| {item['label']} | {item['before']['macro_mae']:.4f} | {item['after']['macro_mae']:.4f} | {item['comparison']['delta_macro_mae']:+.4f} | {item['after']['macro_correlation']:.4f} | {item['after']['mean_prediction_std_ratio']:.3f} | {item['comparison']['mae_win_rate']:.1%} |"
         )
@@ -404,7 +468,18 @@ def main():
         ]
     )
     (args.output / "REPORT.md").write_text("\n".join(lines), encoding="utf-8")
-    print(json.dumps({"output": str(args.output), "best_model": best_model, "flagged_scans": len(flagged), "models": list(model_reports)}, indent=2), flush=True)
+    print(
+        json.dumps(
+            {
+                "output": str(args.output),
+                "best_model": best_model,
+                "flagged_scans": len(flagged),
+                "models": list(model_reports),
+            },
+            indent=2,
+        ),
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

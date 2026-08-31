@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import cdflib
@@ -50,19 +50,27 @@ def _axis(value, name, size):
 
 
 def read_model_output(path, *, scale="unit"):
-    """Read and validate the current model NPZ without changing the model."""
+    """Read and validate a model-output NPZ."""
     with np.load(path, allow_pickle=False) as data:
-        output = next((np.asarray(data[key], dtype=float) for key in MODEL_KEYS if key in data), None)
+        output = next(
+            (np.asarray(data[key], dtype=float) for key in MODEL_KEYS if key in data),
+            None,
+        )
         if output is None:
-            raise KeyError("model output must contain prediction, amplitude, or model_output")
+            raise KeyError(
+                "model output must contain prediction, amplitude, or model_output"
+            )
         if output.ndim != 2 or not np.all(np.isfinite(output)):
             raise ValueError("model prediction must be a finite two-dimensional array")
         metadata = {}
         if "meta_json" in data:
             raw = _scalar(data["meta_json"], "meta_json")
-            if isinstance(raw, bytes):
-                raw = raw.decode("utf-8")
-            metadata = json.loads(raw)
+            try:
+                if isinstance(raw, bytes):
+                    raw = raw.decode("utf-8")
+                metadata = json.loads(raw)
+            except (TypeError, ValueError) as error:
+                raise ValueError("meta_json must contain JSON text") from error
             if not isinstance(metadata, dict):
                 raise ValueError("meta_json must decode to an object")
         orientation = metadata.get("orientation", "height,frequency")
@@ -168,21 +176,43 @@ def _base_attrs(field, units=" "):
 
 
 def _assemble(model_output, header, *, scale="unit"):
-    output, valid, frequency, height, model_meta = read_model_output(model_output, scale=scale)
+    output, valid, frequency, height, model_meta = read_model_output(
+        model_output, scale=scale
+    )
     _required_header(header)
-    ampl = np.clip(np.rint(np.where(valid, output, 0.0).T * 255.0), 0, 255).astype(np.uint8)
+    ampl = np.clip(np.rint(np.where(valid, output, 0.0).T * 255.0), 0, 255).astype(
+        np.uint8
+    )
     n_scan, n_range = ampl.shape
-    delay = np.asarray(header.get("delay_time", height / CDF_EPOCH_MS), dtype=float).ravel()
+    delay = np.asarray(
+        header.get("delay_time", height / CDF_EPOCH_MS), dtype=float
+    ).ravel()
     if delay.size != n_range or not np.all(np.isfinite(delay)):
         raise ValueError(f"delay_time must contain {n_range} finite values")
     epoch = _epochs(header, n_scan)
     marker_times = _array(header, ("frequency_marker_times_ms", "Time_mark"), 22)
     marker_freq = _array(header, ("frequency_markers_mhz", "freq_mark"), 22)
-    lmt = np.asarray(_header_value(header, ("local_mean_time", "LMT"), [header.get("hr", 0), header.get("min", 0)]), dtype=np.int32).ravel()
-    glmt = np.asarray(_header_value(header, ("geomagnetic_local_time", "GMLMT"), lmt), dtype=np.int32).ravel()
+    lmt = np.asarray(
+        _header_value(
+            header,
+            ("local_mean_time", "LMT"),
+            [header.get("hr", 0), header.get("min", 0)],
+        ),
+        dtype=np.int32,
+    ).ravel()
+    glmt = np.asarray(
+        _header_value(header, ("geomagnetic_local_time", "GMLMT"), lmt), dtype=np.int32
+    ).ravel()
     if lmt.size != 2 or glmt.size != 2:
         raise ValueError("LMT and GMLMT must contain hour and minute")
-    geo = np.asarray([header["geographic_latitude_deg"], header["geographic_longitude_deg"], header["satellite_height_km"]], dtype=np.float32)
+    geo = np.asarray(
+        [
+            header["geographic_latitude_deg"],
+            header["geographic_longitude_deg"],
+            header["satellite_height_km"],
+        ],
+        dtype=np.float32,
+    )
     values = {
         "satellite": int(header["satellite_number"]),
         "station_id": int(header.get("station_id", -1)),
@@ -240,7 +270,9 @@ def _assemble(model_output, header, *, scale="unit"):
         "ampl": "model_prediction_quantized_to_uint8",
         "freq": "csa_artifact_axis" if csa_only else "model_output_axis",
         "v_height": "csa_artifact_axis" if csa_only else "model_output_axis",
-        "delay_time": "pass_header" if "delay_time" in header else "derived_from_v_height",
+        "delay_time": "pass_header"
+        if "delay_time" in header
+        else "derived_from_v_height",
         "Epoch": "csa_pair_name" if csa_only else "pass_header",
         "valid_mask": "model_output_or_all_true",
         "swept_start": "derived_model_grid_has_no_fixed_prefix",
@@ -254,13 +286,16 @@ def _assemble(model_output, header, *, scale="unit"):
 
 
 def export_model_cdf(model_output, header, destination, *, scale="unit"):
-    """Write a model-derived CDF and return its assembled values/provenance."""
+    """Write a model-derived CDF and return its values and provenance."""
     values, provenance = _assemble(model_output, header, scale=scale)
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         destination.unlink()
-    cdf = cdfwrite.CDF(destination, cdf_spec={"Encoding": cdfwrite.CDF.NETWORK_ENCODING, "Majority": "Row_major"})
+    cdf = cdfwrite.CDF(
+        destination,
+        cdf_spec={"Encoding": cdfwrite.CDF.NETWORK_ENCODING, "Majority": "Row_major"},
+    )
     try:
         cdf.write_globalattrs(
             {
@@ -271,38 +306,127 @@ def export_model_cdf(model_output, header, destination, *, scale="unit"):
                 "FINALISIS_PROVENANCE": {0: json.dumps(provenance, sort_keys=True)},
             }
         )
-        ints = ("satellite", "station_id", "power_code", "s/r_code", "f_range_code", "DMODE", "GMODE", "mixed_mode", "AIT_mode", "fix_freq", "year", "doy", "hr", "min", "DIP", "CHI", "sun", "CEP", "VLF", "RPA", "IMS", "SPS", "EPD", "RLP", "ASP", "swept_start", "vh_num", "f_num")
+        ints = (
+            "satellite",
+            "station_id",
+            "power_code",
+            "s/r_code",
+            "f_range_code",
+            "DMODE",
+            "GMODE",
+            "mixed_mode",
+            "AIT_mode",
+            "fix_freq",
+            "year",
+            "doy",
+            "hr",
+            "min",
+            "DIP",
+            "CHI",
+            "sun",
+            "CEP",
+            "VLF",
+            "RPA",
+            "IMS",
+            "SPS",
+            "EPD",
+            "RLP",
+            "ASP",
+            "swept_start",
+            "vh_num",
+            "f_num",
+        )
         int_vectors = ("LMT", "GMLMT")
         float32_scalars = ("GMLAT", "GMLONG", "FH", "INV_LAT", "L")
         float64_scalars = ("sec",)
         vectors = ("Time_mark", "freq_mark", "delay_time", "v_height", "Epoch", "freq")
         strings = ("label_LMT", "unit_LMT", "label_geo", "unit_geo", "label_GMLMT")
         for name in ints:
-            _write(cdf, name, np.asarray(values[name], dtype=np.int32), cdfwrite.CDF.CDF_INT4, _base_attrs(name))
+            _write(
+                cdf,
+                name,
+                np.asarray(values[name], dtype=np.int32),
+                cdfwrite.CDF.CDF_INT4,
+                _base_attrs(name),
+            )
         for name in int_vectors:
-            _write(cdf, name, np.asarray(values[name], dtype=np.int32), cdfwrite.CDF.CDF_INT4, _base_attrs(name))
+            _write(
+                cdf,
+                name,
+                np.asarray(values[name], dtype=np.int32),
+                cdfwrite.CDF.CDF_INT4,
+                _base_attrs(name),
+            )
         for name in float32_scalars:
-            _write(cdf, name, np.asarray(values[name], dtype=np.float32), cdfwrite.CDF.CDF_FLOAT, _base_attrs(name))
+            _write(
+                cdf,
+                name,
+                np.asarray(values[name], dtype=np.float32),
+                cdfwrite.CDF.CDF_FLOAT,
+                _base_attrs(name),
+            )
         for name in float64_scalars:
-            _write(cdf, name, np.asarray(values[name], dtype=np.float64), cdfwrite.CDF.CDF_DOUBLE, _base_attrs(name))
+            _write(
+                cdf,
+                name,
+                np.asarray(values[name], dtype=np.float64),
+                cdfwrite.CDF.CDF_DOUBLE,
+                _base_attrs(name),
+            )
         for name in vectors:
-            _write(cdf, name, np.asarray(values[name], dtype=np.float64), cdfwrite.CDF.CDF_DOUBLE, _base_attrs(name), record_vary=name in {"Epoch", "freq"})
-        _write(cdf, "geo_coord", np.asarray(values["geo_coord"], dtype=np.float32), cdfwrite.CDF.CDF_FLOAT, _base_attrs("Geographic coordinates", "deg,deg,km"))
+            _write(
+                cdf,
+                name,
+                np.asarray(values[name], dtype=np.float64),
+                cdfwrite.CDF.CDF_DOUBLE,
+                _base_attrs(name),
+                record_vary=name in {"Epoch", "freq"},
+            )
+        _write(
+            cdf,
+            "geo_coord",
+            np.asarray(values["geo_coord"], dtype=np.float32),
+            cdfwrite.CDF.CDF_FLOAT,
+            _base_attrs("Geographic coordinates", "deg,deg,km"),
+        )
         for name in strings:
-            _write(cdf, name, values[name], cdfwrite.CDF.CDF_CHAR, _base_attrs(name), chars=True)
-        _write(cdf, "ampl", values["ampl"], cdfwrite.CDF.CDF_UINT1, _base_attrs("Sounder amplitude", ""), record_vary=True)
-        _write(cdf, "valid_mask", values["valid_mask"], cdfwrite.CDF.CDF_UINT1, _base_attrs("Model valid mask", ""), record_vary=True)
+            _write(
+                cdf,
+                name,
+                values[name],
+                cdfwrite.CDF.CDF_CHAR,
+                _base_attrs(name),
+                chars=True,
+            )
+        _write(
+            cdf,
+            "ampl",
+            values["ampl"],
+            cdfwrite.CDF.CDF_UINT1,
+            _base_attrs("Sounder amplitude", ""),
+            record_vary=True,
+        )
+        _write(
+            cdf,
+            "valid_mask",
+            values["valid_mask"],
+            cdfwrite.CDF.CDF_UINT1,
+            _base_attrs("Model valid mask", ""),
+            record_vary=True,
+        )
     finally:
         cdf.close()
     return values, provenance
 
 
 def header_from_csa(pair_name, station, frequency, height):
-    """Build export metadata from a CSA pair name and calibrated CSA axes only."""
+    """Build export metadata from a CSA pair name and calibrated axes."""
     name = Path(str(pair_name)).stem
     station = str(station or "").strip()
     if station.lower() in {"", "<blank>", "unknown"}:
-        station_match = re.search(r"(?:^|_)i2_av_([^_]+)_\d{13}(?:_v\d+)?$", name, re.IGNORECASE)
+        station_match = re.search(
+            r"(?:^|_)i2_av_([^_]+)_\d{13}(?:_v\d+)?$", name, re.IGNORECASE
+        )
         station = station_match.group(1).upper() if station_match else "unknown"
     match = re.search(r"(?<!\d)(\d{13})(?:_v\d+)?$", name)
     if not match:
@@ -315,7 +439,7 @@ def header_from_csa(pair_name, station, frequency, height):
     hour = int(digits[7:9])
     minute = int(digits[9:11])
     second = int(digits[11:13])
-    timestamp = datetime(year, 1, 1) + timedelta(
+    timestamp = datetime(year, 1, 1, tzinfo=UTC) + timedelta(
         days=doy - 1, hours=hour, minutes=minute, seconds=second
     )
     epoch = float(
@@ -334,7 +458,11 @@ def header_from_csa(pair_name, station, frequency, height):
     frequency = np.asarray(frequency, dtype=float).ravel()
     height = np.asarray(height, dtype=float).ravel()
     for label, axis in (("frequency", frequency), ("height", height)):
-        if axis.size < 2 or not np.all(np.isfinite(axis)) or not np.all(np.diff(axis) > 0.0):
+        if (
+            axis.size < 2
+            or not np.all(np.isfinite(axis))
+            or not np.all(np.diff(axis) > 0.0)
+        ):
             raise ValueError(f"CSA {label} axis must be finite and strictly increasing")
 
     unknown_ints = (
@@ -426,7 +554,7 @@ def header_from_csa(pair_name, station, frequency, height):
 
 
 def header_from_cdf(path):
-    """Extract a complete exporter header from a NASA CDF for tests/audits."""
+    """Extract exporter metadata from a NASA CDF."""
     cdf = cdflib.CDF(str(path))
 
     def flat(name):

@@ -9,6 +9,6 @@ from PIL import Image
 
 
 def load_image(path: str | Path) -> np.ndarray:
-    """Load an image as a grayscale floating-point array."""
+    """Load an image as a grayscale floating-point array in [0, 1]."""
     with Image.open(path) as handle:
         return np.asarray(handle.convert("L"), dtype=float)

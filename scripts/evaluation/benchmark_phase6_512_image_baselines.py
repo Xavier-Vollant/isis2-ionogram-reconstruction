@@ -15,8 +15,7 @@ from scipy.ndimage import gaussian_filter, median_filter
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-
+from isis_research import ionogram
 
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
@@ -30,8 +29,12 @@ def rows_for(corpus):
 
 def target_for(targets, row, target_rows):
     target_row = target_rows[row["pair_name"]]
-    with np.load(Path(targets) / target_row["target_artifact"], allow_pickle=False) as data:
-        return np.asarray(data["amplitude"], dtype=np.float32), np.asarray(data["valid_mask"], dtype=bool)
+    with np.load(
+        Path(targets) / target_row["target_artifact"], allow_pickle=False
+    ) as data:
+        return np.asarray(data["amplitude"], dtype=np.float32), np.asarray(
+            data["valid_mask"], dtype=bool
+        )
 
 
 def normalize(values, valid):
@@ -39,10 +42,13 @@ def normalize(values, valid):
     if not finite.any():
         return np.zeros_like(values, dtype=np.float32)
     low, high = np.percentile(values[finite], [2.0, 98.0])
-    return np.clip((values - low) / max(float(high - low), 1e-6), 0.0, 1.0).astype(np.float32)
+    return np.clip((values - low) / max(float(high - low), 1e-6), 0.0, 1.0).astype(
+        np.float32
+    )
 
 
 def predictions(film, valid, train_mean, include_local=True):
+    """Build non-learned image predictions for one film scan."""
     signal = np.where(valid, 1.0 - film, 0.0).astype(np.float32)
     candidates = {
         "constant_train_mean": np.full_like(signal, train_mean),
@@ -57,23 +63,27 @@ def predictions(film, valid, train_mean, include_local=True):
 
 
 def metric(prediction, target, valid):
+    """Compare one prediction with its NASA target on jointly valid pixels."""
     mask = valid & np.isfinite(prediction) & np.isfinite(target)
     left = prediction[mask].astype(float)
     right = target[mask].astype(float)
     if len(left) < 2:
-        return {"pixels": int(len(left)), "mae": None, "rmse": None, "correlation": None}
+        return {"pixels": len(left), "mae": None, "rmse": None, "correlation": None}
     centred_left = left - left.mean()
     centred_right = right - right.mean()
     denominator = np.linalg.norm(centred_left) * np.linalg.norm(centred_right)
     return {
-        "pixels": int(len(left)),
+        "pixels": len(left),
         "mae": float(np.mean(np.abs(left - right))),
         "rmse": float(np.sqrt(np.mean((left - right) ** 2))),
-        "correlation": float(np.dot(centred_left, centred_right) / denominator) if denominator > 0 else 0.0,
+        "correlation": float(np.dot(centred_left, centred_right) / denominator)
+        if denominator > 0
+        else 0.0,
     }
 
 
 def main():
+    """Parse CLI options and benchmark non-learned held-out baselines."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--targets", type=Path, default=DEFAULT_TARGETS)
@@ -102,10 +112,14 @@ def main():
         scan = ionogram.read_validated(args.corpus / row["csa_artifact"])
         target, target_valid = target_for(args.targets, row, target_rows)
         valid = scan.valid_mask & target_valid
-        for name, prediction in predictions(scan.intensity, scan.valid_mask, train_mean).items():
+        for name, prediction in predictions(
+            scan.intensity, scan.valid_mask, train_mean
+        ).items():
             results.setdefault(name, []).append(metric(prediction, target, valid))
         if count == 1 or count % 100 == 0 or count == len(held_out):
-            print(f"benchmarked {count}/{len(held_out)}: {row['pair_name']}", flush=True)
+            print(
+                f"benchmarked {count}/{len(held_out)}: {row['pair_name']}", flush=True
+            )
 
     summary = {
         "schema": "isis.phase6_native_512_image_baselines.v1",
@@ -116,9 +130,21 @@ def main():
     }
     for name, values in results.items():
         summary["metrics"][name] = {
-            "macro_mae": float(np.mean([item["mae"] for item in values if item["mae"] is not None])),
-            "macro_rmse": float(np.mean([item["rmse"] for item in values if item["rmse"] is not None])),
-            "macro_correlation": float(np.mean([item["correlation"] for item in values if item["correlation"] is not None])),
+            "macro_mae": float(
+                np.mean([item["mae"] for item in values if item["mae"] is not None])
+            ),
+            "macro_rmse": float(
+                np.mean([item["rmse"] for item in values if item["rmse"] is not None])
+            ),
+            "macro_correlation": float(
+                np.mean(
+                    [
+                        item["correlation"]
+                        for item in values
+                        if item["correlation"] is not None
+                    ]
+                )
+            ),
             "pixels": int(sum(item["pixels"] for item in values)),
         }
     args.output.parent.mkdir(parents=True, exist_ok=True)

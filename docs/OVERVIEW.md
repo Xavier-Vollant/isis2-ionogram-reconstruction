@@ -1,72 +1,76 @@
 # What this project does
 
-This project works with scanned ISIS-2 ionograms from the Canadian Space
-Agency (CSA). It turns a film scan into a calibrated digital ionogram, uses an
-image model to estimate an amplitude image, and can save that result in a
-NASA-CDF-like file.
+FINAL ISIS reads scanned ISIS-2 ionograms from the Canadian Space Agency
+(CSA). It calibrates a scan, saves a validated digital ionogram, and can use
+an image model to estimate an amplitude image and export it in a
+NASA-CDF-like format.
 
-The project has two related uses:
+There are two workflows:
 
 1. **Process one scan.** Start with a CSA PNG and run the supported pipeline.
-   The result includes the calibrated axes, the corrected image, diagnostics,
-   and an optional model prediction.
 2. **Build and study models.** Match CSA scans with NASA observations, prepare
-   training targets, train a model, and evaluate it on held-out data.
+   targets, train models, and evaluate them on held-out data.
 
-The first use is the normal starting point. The second use needs a much larger
-data collection than the small examples included in this repository.
+The first workflow is the normal starting point. The second needs a larger
+dataset than the examples included here.
 
 ## Words used in the project
 
 | Term | Meaning here |
 |---|---|
-| **CSA scan** | A PNG image of an ISIS-2 ionogram printed on film and scanned. |
-| **NASA reference CDF** | A measured NASA ionogram stored in CDF format. It can be used for matching, calibration, training, or comparison. |
-| **Calibration** | Estimating the physical frequency and virtual-height axes represented by the film. |
-| **Ionogram artifact** | The project's validated intermediate file. It stores the corrected image, axes, support mask, status, and processing history. |
-| **Model prediction** | The amplitude image estimated from the calibrated CSA artifact by one of the included image models. |
-| **Model-derived CDF-like file** | A CDF output built from the CSA axes and model prediction. It has a NASA-like structure, but its amplitude is a prediction rather than a measured NASA observation. |
-| **Training corpus** | The matched and processed CSA/NASA examples used to train or evaluate a model. |
-| **Usable** | The pipeline believes the artifact has enough valid support for the next stage. |
+| **CSA scan** | A PNG of an ISIS-2 ionogram printed on film and scanned. |
+| **NASA reference CDF** | A measured NASA ionogram in CDF format. It can support matching, calibration, training, or comparison. |
+| **Calibration** | Estimating the frequency and virtual-height axes represented by the film. |
+| **Ionogram artifact** | The validated intermediate file containing the image, axes, support mask, status, and processing history. |
+| **Model prediction** | The amplitude image estimated by an included image model. |
+| **Model-derived CDF-like file** | A NASA-like CDF file built from the CSA axes and model prediction. Its amplitude is not a measured NASA value. |
+| **Training corpus** | Matched and processed CSA/NASA examples used for training or evaluation. |
+| **Usable** | The artifact has enough valid support for the next stage. |
 | **Review** | The artifact was produced, but its quality or calibration needs inspection. |
 | **Not usable** | The pipeline could not produce a trustworthy artifact for the next stage. |
 
 ## What the output means
 
-The pipeline preserves the image orientation as `(height, frequency)` and
-records the real frequency and virtual-height coordinates instead of treating
-the image as an unlabelled 512×512 array.
+The stored image orientation is `(height, frequency)`. The artifact also stores
+the frequency and virtual-height coordinates, so the image is not just an
+unlabelled 512×512 array.
 
-The model output is not a recovered NASA measurement. Matching the CDF file
-layout or variable names does not make the prediction measured data, and this
-project does not currently reconstruct electron-density profiles.
+The model output is a prediction from the CSA scan. A matching CDF layout or
+variable name does not make it measured data. Electron-density profiles are
+outside the current scope.
+
+## Future work
+
+The model-derived file is only NASA-CDF-like today. A future goal is to make
+its signal, axes, variables, metadata, and missing-value handling close enough
+to measured NASA CDFs that TOPIST can process it in the same way as a NASA
+observation. That will require validation with TOPIST, not just checking that
+the file opens or has matching variable names.
 
 ## Other retained research utilities
 
-The quick-start path does not call every module in the repository. The other
-capabilities are still present for research and follow-up work:
+The one-scan path does not call every module. The remaining research tools
+cover:
 
-- echo and trace extraction under `src/isis_research/extraction/`;
+- echo and trace extraction in `src/isis_research/extraction/`;
 - signal-occupancy detection in `src/isis_research/signal_detection.py`;
-- labelling and dataset helpers under `src/isis_research/labeling/`;
-- NASA CDF reading, comparison, station metadata, and model export under
+- labelling and dataset helpers in `src/isis_research/labeling/`;
+- NASA CDF reading, comparison, station metadata, and model export in
   `src/isis_research/nasa/`; and
 - alternative training, evaluation, and contrast experiments under
   `scripts/training/`, `scripts/evaluation/`, and `scripts/experiments/`.
 
-These are documented as separate capabilities because they are useful for
-research, but they are not extra steps in the normal one-scan workflow.
+They are separate from the normal one-scan workflow.
 
 ## What is included
 
-The repository includes the supported processing pipeline, three inference
-checkpoints, small CSA and NASA examples, notebooks, catalog/matching tools,
-training scripts, evaluation scripts, and tests.
+The repository includes the processing pipeline, three inference checkpoints,
+small CSA and NASA examples, notebooks, catalog and matching tools, training
+and evaluation scripts, and tests.
 
 The complete historical CSA/NASA archive and generated training corpus are not
 checked in. They can be downloaded or rebuilt with the dataset tools when a
 larger training or evaluation run is needed.
 
-For the recommended commands, start with the repository
-[`README.md`](../README.md). For the exact artifact fields and validation rules,
-see [`product_contract.md`](product_contract.md).
+For commands, start with [`README.md`](../README.md). For artifact fields and
+validation rules, see [`product_contract.md`](product_contract.md).

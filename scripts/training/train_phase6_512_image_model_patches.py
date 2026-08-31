@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Train comparable native-resolution image models on masked target patches."""
+"""Train a native-resolution image model on masked target patches."""
 
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 import sys
 from pathlib import Path
@@ -14,15 +13,18 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research.models import image_features, model_constructor  # noqa: E402
-from scripts.training.train_phase6_512_image_model import load_sample, rows_for  # noqa: E402
+from isis_research.models import image_features, model_constructor
+from scripts.training.train_phase6_512_image_model import load_sample, rows_for
 
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
 DEFAULT_OUTPUT = ROOT / "outputs/evaluation/phase6_512_image_model_experiment"
 
 
-def make_patches(corpus, targets, rows, target_rows, patch_size, count, rng, input_channels=1):
+def make_patches(
+    corpus, targets, rows, target_rows, patch_size, count, rng, input_channels=1
+):
+    """Sample masked training patches from the native-resolution corpus."""
     patches = []
     for row in rows:
         signal, target, mask = load_sample(corpus, targets, row, target_rows)
@@ -43,8 +45,9 @@ def make_patches(corpus, targets, rows, target_rows, patch_size, count, rng, inp
 
 
 def train(args):
+    """Train one registered image model on the sampled patch set."""
     import torch
-    import torch.nn.functional as functional
+    from torch.nn import functional
 
     torch.manual_seed(args.seed)
     torch.set_num_threads(min(4, torch.get_num_threads()))
@@ -113,11 +116,14 @@ def train(args):
         "loss_decreased": bool(losses[-1] < losses[0]),
         "output_checkpoint": str(checkpoint),
     }
-    (args.output / "report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    (args.output / "report.json").write_text(
+        json.dumps(report, indent=2) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report, indent=2), flush=True)
 
 
 def main():
+    """Parse CLI options and train native-resolution patch models."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
     parser.add_argument("--targets", type=Path, default=DEFAULT_TARGETS)
@@ -125,8 +131,14 @@ def main():
     parser.add_argument(
         "--model",
         choices=(
-            "unet", "cnn_2d", "wide_unet", "residual_unet",
-            "norm_residual_unet", "dilated_cnn", "coord_unet", "hybrid_unet",
+            "unet",
+            "cnn_2d",
+            "wide_unet",
+            "residual_unet",
+            "norm_residual_unet",
+            "dilated_cnn",
+            "coord_unet",
+            "hybrid_unet",
         ),
         default="wide_unet",
     )

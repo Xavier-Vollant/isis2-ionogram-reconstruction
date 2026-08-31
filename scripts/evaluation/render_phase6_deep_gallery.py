@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render representative and worst held-out scans for a deep-evaluation model."""
+"""Render representative and worst held-out scans from an evaluation report."""
 
 from __future__ import annotations
 
@@ -12,20 +12,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / "src")]
 
-from isis_research import ionogram  # noqa: E402
-from isis_research.models import image_features  # noqa: E402
-from scripts.evaluation.evaluate_phase6_512_image_model import load_model  # noqa: E402
-from scripts.evaluation.render_phase6_512_image_gallery import render_one, write_page  # noqa: E402
-from scripts.training.train_phase6_512_image_model import load_sample, rows_for  # noqa: E402
-
+from isis_research import ionogram
+from isis_research.models import image_features
+from scripts.evaluation.evaluate_phase6_512_image_model import load_model
+from scripts.evaluation.render_phase6_512_image_gallery import render_one, write_page
+from scripts.training.train_phase6_512_image_model import load_sample, rows_for
 
 DEFAULT_REPORT = ROOT / "outputs/evaluation/phase6_deep_report/report.json"
 DEFAULT_CORPUS = ROOT / "outputs/evaluation/phase6_usable_film_only_512"
 DEFAULT_TARGETS = ROOT / "outputs/evaluation/phase6_usable_film_only_512_targets"
 DEFAULT_OUTPUT = ROOT / "outputs/evaluation/phase6_deep_report/gallery"
 CHECKPOINTS = {
-    "hybrid_unet": ROOT / "outputs/evaluation/phase6_continual_models/hybrid_unet/best_model.pt",
-    "norm_residual_unet": ROOT / "outputs/evaluation/phase6_continual_models/norm_residual_unet/best_model.pt",
+    "hybrid_unet": ROOT
+    / "outputs/evaluation/phase6_continual_models/hybrid_unet/best_model.pt",
+    "norm_residual_unet": ROOT
+    / "outputs/evaluation/phase6_continual_models/norm_residual_unet/best_model.pt",
 }
 
 
@@ -63,6 +64,7 @@ def choose_rows(report, model, rows, count, seed):
 
 
 def main():
+    """Parse CLI options and render representative deep-evaluation scans."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)
     parser.add_argument("--corpus", type=Path, default=DEFAULT_CORPUS)
@@ -92,7 +94,9 @@ def main():
     items = []
     for index, row in enumerate(selected, 1):
         scan = ionogram.read_validated(args.corpus / row["csa_artifact"])
-        film, target, target_mask = load_sample(args.corpus, args.targets, row, target_rows)
+        film, target, target_mask = load_sample(
+            args.corpus, args.targets, row, target_rows
+        )
         channels = checkpoint_data.get("input_channels", 1)
         with torch.no_grad():
             prediction = torch.sigmoid(

@@ -1,10 +1,16 @@
+"""Tests for model-derived CDF export and metadata contracts."""
+
 import json
 
 import cdflib
 import numpy as np
 import pytest
 
-from isis_research.nasa.model_cdf import export_model_cdf, header_from_csa
+from isis_research.nasa.model_cdf import (
+    export_model_cdf,
+    header_from_csa,
+    read_model_output,
+)
 
 
 def _header(scan_count):
@@ -105,7 +111,9 @@ def test_export_contains_the_checked_in_nasa_variable_set(tmp_path):
     export_model_cdf(model, _header(4), output)
     sample = cdflib.CDF("data/samples/i2_av_ott_1975076233748_v01.cdf")
     exported = cdflib.CDF(str(output))
-    assert set(sample.cdf_info().zVariables).issubset(set(exported.cdf_info().zVariables))
+    assert set(sample.cdf_info().zVariables).issubset(
+        set(exported.cdf_info().zVariables)
+    )
 
 
 def test_csa_header_marks_unavailable_metadata_without_nasa_values(tmp_path):
@@ -138,3 +146,33 @@ def test_csa_header_marks_unavailable_metadata_without_nasa_values(tmp_path):
     assert provenance["freq"] == "csa_artifact_axis"
     assert provenance["Epoch"] == "csa_pair_name"
     assert "satellite_number" in provenance["unknown_pass_fields"]
+
+
+def test_model_output_rejects_nonfinite_prediction(tmp_path):
+    model = tmp_path / "bad_prediction.npz"
+    np.savez(
+        model,
+        prediction=np.array([[0.0, np.nan], [0.5, 1.0]]),
+        frequency_mhz=np.array([1.0, 2.0]),
+        virtual_height_km=np.array([0.0, 100.0]),
+    )
+    with pytest.raises(ValueError, match="finite two-dimensional"):
+        read_model_output(model)
+
+
+def test_model_output_rejects_invalid_metadata_json(tmp_path):
+    model = tmp_path / "bad_metadata.npz"
+    np.savez(
+        model,
+        prediction=np.zeros((2, 2)),
+        frequency_mhz=np.array([1.0, 2.0]),
+        virtual_height_km=np.array([0.0, 100.0]),
+        meta_json=np.array(7),
+    )
+    with pytest.raises(ValueError, match="meta_json"):
+        read_model_output(model)
+
+
+def test_csa_header_rejects_a_name_without_observation_time():
+    with pytest.raises(ValueError, match="must end with"):
+        header_from_csa("not-an-observation", "KSH", [1.0, 2.0], [0.0, 100.0])

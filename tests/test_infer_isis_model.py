@@ -1,3 +1,5 @@
+"""Tests for model checkpoint lookup and output calibration."""
+
 from pathlib import Path
 
 import numpy as np

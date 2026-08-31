@@ -1,8 +1,8 @@
 # Data, matching, and training
 
-The one-scan workflow uses the checked-in calibration profile and model. The
-training workflow is separate because it needs a much larger collection of
-matched CSA scans and NASA CDFs.
+The one-scan workflow uses the checked-in calibration profile and models.
+Training needs a larger collection of matched CSA scans and NASA CDFs, so it
+is a separate workflow.
 
 ## Build the catalog tables
 
@@ -17,8 +17,8 @@ python scripts/dataset/build_candidate_matches.py \
 ```
 
 The builders write `csa_master.csv`, `nasa_master.csv`, and a ranked candidate
-crosswalk under `data/processed/`. The candidate rows are metadata matches,
-not confirmed scientific matches.
+crosswalk under `data/processed/`. Candidate rows are metadata matches, not
+confirmed scientific matches.
 
 For a small connectivity test, NASA discovery can be limited with
 `--limit-stations 1`. Use `--skip-acquire` when the source inventories are
@@ -34,9 +34,9 @@ python scripts/dataset/download_candidate_data.py \
   --limit 1000
 ```
 
-The downloader caches CSA PNGs and versioned NASA CDFs under
-`data/raw/matches/`, validates that both files decode, and writes a static
-review page plus a reviewed CSV under `data/processed/`.
+The downloader caches CSA PNGs and NASA CDFs under `data/raw/matches/`, checks
+that both files decode, and writes a static review page plus a reviewed CSV
+under `data/processed/`.
 
 The downloader is resumable. Run it again to reuse cached files, or add
 `--refresh` when the cached files should be replaced.
@@ -53,7 +53,7 @@ python scripts/dataset/run_amplitude_batch.py \
 
 This performs landmark alignment, structure detection, calibration, warping,
 quality gating, and dataset packaging. A batch can contain `usable`, `review`,
-and rejected cases; only the appropriate usable records should continue into
+and rejected cases. Only approved usable records should continue into
 training.
 
 ## Prepare targets and train
@@ -77,8 +77,8 @@ python scripts/training/train_phase6_512_image_model.py \
 ```
 
 The training script defaults to a short smoke run. Increase `--epochs` for a
-real experiment. It writes a new checkpoint under the requested output
-directory and does not overwrite the checked-in models.
+real experiment. It writes a new checkpoint under the output directory and
+does not overwrite the checked-in models.
 
 ## Evaluate a checkpoint
 
@@ -91,11 +91,11 @@ python scripts/evaluation/evaluate_phase6_512_image_model.py \
 ```
 
 Evaluation uses held-out usable scans. NASA CDFs are references for training
-and scoring; they are not inputs to inference on a new CSA scan.
+and scoring, not inputs to inference on a new CSA scan.
 
 ## What is not included
 
 The repository contains examples and the builders, but not the complete
 historical CSA/NASA archive or generated training corpus. Rebuilding a large
-corpus requires network access, storage, and time. The checked-in model files
-are ready for inference and are not replaced by a short training smoke run.
+corpus requires network access, storage, and time. The checked-in models are
+ready for inference and are not replaced by a short training smoke run.

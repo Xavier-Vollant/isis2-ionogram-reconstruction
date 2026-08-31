@@ -1,15 +1,10 @@
 #!/usr/bin/env python3
-"""Download, validate, and rank the files behind metadata candidates.
+"""Download, validate, and rank files behind metadata candidates.
 
-The metadata crosswalk only proposes a CSA scan and a NASA ionogram. This
-command fetches both sides, checks that they decode, records whether NASA has a
-usable frequency axis, and writes the ``review_ranked_*.csv`` contract used by
-the Phase 1 dataset builder.
-
-Downloads are cached under ``data/raw/matches``. The NASA CDF archive uses a
-versioned filename, so the candidate's predicted name is resolved against the
-SPDF day directory before the file is downloaded.
+The command fetches the CSA scan and NASA CDF, checks that both decode, and
+writes the review table used by dataset preparation. Downloads are cached.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -27,9 +22,9 @@ import cdflib
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-from PIL import Image  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
 
 ROOT = Path(__file__).resolve().parents[2]
 PROCESSED = ROOT / "data" / "processed"
@@ -124,7 +119,7 @@ def download(url: str, target: Path, refresh: bool = False) -> bool:
         temporary.write_bytes(body)
         temporary.replace(target)
         return True
-    except Exception:
+    except (OSError, urllib.error.URLError, ValueError):
         return False
     finally:
         temporary.unlink(missing_ok=True)
@@ -136,11 +131,13 @@ def csa_target(row: dict[str, str]) -> Path:
 
 
 def get_csa(row: dict[str, str], refresh: bool = False) -> Path | None:
+    """Download one candidate's CSA image and return its cached path."""
     target = csa_target(row)
     return target if download(row["csa_image_url"], target, refresh) else None
 
 
 def get_nasa(row: dict[str, str], refresh: bool = False) -> tuple[Path | None, str]:
+    """Resolve, download, and return one candidate's NASA CDF."""
     name, kind = find_cdf(row)
     if not name:
         return None, kind
@@ -159,7 +156,7 @@ def read_ionogram(path: Path) -> dict[str, object] | None:
         amplitude = np.asarray(cdf.varget("ampl"))
         height = np.asarray(cdf.varget("v_height"), dtype=float).ravel()
         frequency = np.asarray(cdf.varget("freq"), dtype=float).ravel()
-    except Exception:
+    except (OSError, KeyError, IndexError, TypeError, ValueError, RuntimeError):
         return None
     if amplitude.ndim != 2 or amplitude.size == 0 or height.size == 0:
         return None
@@ -180,12 +177,13 @@ def read_ionogram(path: Path) -> dict[str, object] | None:
 
 
 def validate_csa(path: Path) -> tuple[bool, str]:
+    """Decode a CSA image and return ``(is_valid, width_by_height)``."""
     try:
         with Image.open(path) as image:
             size = f"{image.width}x{image.height}"
             image.load()
         return True, size
-    except Exception:
+    except (OSError, SyntaxError, TypeError, ValueError):
         return False, ""
 
 
@@ -225,6 +223,7 @@ def render(ionogram: dict[str, object], path: Path, title: str) -> None:
 
 
 def process(row: dict[str, str], refresh: bool = False) -> dict[str, object]:
+    """Fetch both sides of one candidate and add validation/review fields."""
     result: dict[str, object] = dict(row)
     csa_path = get_csa(row, refresh)
     result["csa_ok"], result["csa_size"] = (
@@ -235,7 +234,14 @@ def process(row: dict[str, str], refresh: bool = False) -> dict[str, object]:
 
     try:
         cdf_path, match_kind = get_nasa(row, refresh)
-    except Exception as error:
+    except (
+        OSError,
+        urllib.error.URLError,
+        KeyError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ) as error:
         cdf_path, match_kind = None, f"download_error:{type(error).__name__}"
     result["cdf_match_kind"] = match_kind
     result["nasa_ok"] = False
@@ -283,6 +289,7 @@ EXTRA_COLUMNS = [
 def write_ranked(
     rows: list[dict[str, object]], out_csv: Path, base_columns: list[str]
 ) -> None:
+    """Write validated candidates with review rank and derived file fields."""
     base = [column for column in base_columns if column not in EXTRA_COLUMNS]
     out_csv.parent.mkdir(parents=True, exist_ok=True)
     with out_csv.open("w", newline="", encoding="utf-8") as handle:
@@ -299,8 +306,12 @@ def write_ranked(
                     "csa_size": row.get("csa_size", ""),
                     "cdf_match_kind": row.get("cdf_match_kind", ""),
                     "nasa_cdf_file": row.get("nasa_cdf_file", ""),
-                    "csa_file": Path(row["csa_path"]).name if row.get("csa_path") else "",
-                    "nasa_png_file": Path(row["nasa_png"]).name if row.get("nasa_png") else "",
+                    "csa_file": Path(row["csa_path"]).name
+                    if row.get("csa_path")
+                    else "",
+                    "nasa_png_file": Path(row["nasa_png"]).name
+                    if row.get("nasa_png")
+                    else "",
                 }
             )
             writer.writerow(record)
@@ -310,14 +321,18 @@ def write_page(rows: list[dict[str, object]]) -> None:
     REVIEW.mkdir(parents=True, exist_ok=True)
     parts = [
         "<title>ISIS-2 candidate review</title>",
-        "<style>body{font:14px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#111;color:#eee}"
-        "h1{font-size:20px}.card{border:1px solid #333;border-radius:8px;margin-bottom:20px;padding:14px;background:#181818}"
-        ".pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}.pane{background:#000;padding:8px}"
-        "img{width:100%;display:block}@media(max-width:800px){.pair{grid-template-columns:1fr}}"
+        (
+            "<style>body{font:14px/1.5 system-ui,sans-serif;margin:0;padding:24px;background:#111;color:#eee}"
+            "h1{font-size:20px}.card{border:1px solid #333;border-radius:8px;margin-bottom:20px;padding:14px;background:#181818}"
+            ".pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}.pane{background:#000;padding:8px}"
+            "img{width:100%;display:block}@media(max-width:800px){.pair{grid-template-columns:1fr}}"
+        ),
         "</style>",
         "<h1>ISIS-2 candidate review</h1>",
-        f"<p>{len(rows)} metadata candidates, ranked after file validation. "
-        "The comparison is not a pixel-level scientific match.</p>",
+        (
+            f"<p>{len(rows)} metadata candidates, ranked after file validation. "
+            "The comparison is not a pixel-level scientific match.</p>"
+        ),
     ]
     for position, row in enumerate(rows, start=1):
         csa_image = (
@@ -343,6 +358,7 @@ def write_page(rows: list[dict[str, object]]) -> None:
 
 
 def main(argv=None) -> None:
+    """Parse CLI options and download/validate a candidate batch."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--candidates",

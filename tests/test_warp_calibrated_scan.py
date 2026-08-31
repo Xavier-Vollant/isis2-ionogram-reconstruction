@@ -1,7 +1,13 @@
+"""Tests for calibrated-scan warping and canonical artifact output."""
+
 import numpy as np
 
 from isis_research import ionogram
-from scripts.pipeline.warp_calibrated_scan import _write_outputs, inverse_mapping, warp_array
+from scripts.pipeline.warp_calibrated_scan import (
+    _write_outputs,
+    inverse_mapping,
+    warp_array,
+)
 
 
 def test_inverse_mapping_is_monotonic_and_handles_interpolation():
@@ -68,5 +74,7 @@ def test_phase6_writer_emits_a_validated_canonical_artifact(tmp_path):
     assert artifact.meta["status"] == "review"
     assert artifact.meta["route"] == "film_only"
     assert artifact.meta["confidence"] == 1.0
-    assert artifact.meta["provenance"]["legacy_phase6_schema"] == "isis.csa_warp_result.v1"
+    assert (
+        artifact.meta["provenance"]["legacy_phase6_schema"] == "isis.csa_warp_result.v1"
+    )
     assert artifact.meta["provenance"]["confidence_metric"] == "valid_mask_coverage"

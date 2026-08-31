@@ -1,8 +1,7 @@
 #!/usr/bin/env python
-"""Align and label the physical landmarks shared by one CDF and film scan.
+"""Align landmarks shared by one NASA CDF and one CSA film scan.
 
-The defaults point at the current proof-of-concept pair; ``--film`` and
-``--cdf`` make the same detector usable for another pair without code changes.
+Pass `--film` and `--cdf` to use a different pair.
 """
 
 from __future__ import annotations
@@ -16,21 +15,22 @@ import cdflib
 import matplotlib
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-import numpy as np  # noqa: E402
-from PIL import Image  # noqa: E402
+import matplotlib.pyplot as plt
+import numpy as np
+from PIL import Image
 
-from isis_research.extraction.echo import detrend  # noqa: E402
-from isis_research.registration import calibrate, film, landmarks  # noqa: E402
+from isis_research.extraction.echo import detrend
+from isis_research.registration import calibrate, film, landmarks
 
 ROOT = Path(__file__).resolve().parents[2]
-TARGET = "i2_av_ksh_1972322002235_v01"
-DEFAULT_FILM = ROOT / "data/raw/matches/csa_png/071_Image0550.png"
+TARGET = "i2_av_ksh_1972357075017_v01"
+DEFAULT_FILM = ROOT / "data/raw/matches/csa_png/B1-35-25_ISIS_B_D-759_Image0243.png"
 DEFAULT_CDF = ROOT / f"data/raw/matches/nasa_cdf/{TARGET}.cdf"
 DEFAULT_OUT = ROOT / "outputs/landmarks"
 
 
 def normalize(array):
+    """Scale an array to display range without changing its shape."""
     array = np.asarray(array, dtype=float)
     finite = np.isfinite(array)
     if not finite.any():
@@ -254,6 +254,7 @@ def draw_nasa(axis, amplitude, v_height, result):
 
 
 def draw_common_grid(axis, warped, amplitude, v_height, result):
+    """Draw the calibrated CSA/NASA comparison on a shared physical grid."""
     nasa = normalize(amplitude.T)
     csa = normalize(warped.T)
     rgb = np.zeros(nasa.shape + (3,))
@@ -421,6 +422,7 @@ def calibrate_vertical_if_better(image, amplitude, epoch, frequency, v_height, r
 
 
 def main():
+    """Parse CLI options and align one CSA/CDF pair."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--film", type=Path, default=DEFAULT_FILM)
     parser.add_argument("--cdf", type=Path, default=DEFAULT_CDF)
@@ -465,7 +467,9 @@ def main():
         )
     else:
         result["vertical_calibration"] = {
-            "status": "skipped_fast_mode" if args.fast else "skipped_bad_horizontal_fit",
+            "status": "skipped_fast_mode"
+            if args.fast
+            else "skipped_bad_horizontal_fit",
             "method": "fast_landmark_batch" if args.fast else "quality_gate",
             "baseline": {"trace": None},
             "candidate": {"trace": None},

@@ -1,10 +1,4 @@
-"""Reading NASA CDF amplitude onto a target grid.
-
-Lifted verbatim from ``scripts/benchmark_native_resolution_models.py``
-(``cdf_amplitude``, native axes) and ``scripts/benchmark_amplitude_workflows.py``
-(``_cdf_sweep`` / ``_resample_cdf``, the fixed 64x96 grid).  ``_cdf_sweep``
-carries the sweep-prefix policy pinned by ``tests/test_cdf_sweep_policy.py``.
-"""
+"""Read NASA CDF amplitude and place it on a target grid."""
 
 from __future__ import annotations
 
@@ -13,14 +7,21 @@ from pathlib import Path
 import cdflib
 import numpy as np
 
-from isis_research.grids import FREQUENCY, HEIGHT, _resample_grid
+from isis_research.grids import _resample_grid
 
 
 def cdf_amplitude(path: Path, frequency: np.ndarray, height: np.ndarray):
+    """Read NASA amplitude and interpolate it onto a height-by-frequency grid."""
     cdf = cdflib.CDF(str(path))
     amplitude = np.asarray(cdf.varget("ampl"), dtype=float)
     source_frequency = np.asarray(cdf.varget("freq"), dtype=float).ravel()
     source_height = np.asarray(cdf.varget("v_height"), dtype=float).ravel()
+    if amplitude.ndim != 2:
+        raise ValueError("CDF amplitude must be two-dimensional")
+    if amplitude.shape != (source_frequency.size, source_height.size):
+        raise ValueError(
+            "CDF amplitude shape does not match its frequency and height axes"
+        )
     valid = (
         np.isfinite(source_frequency)
         & (source_frequency > 0.0)
@@ -65,6 +66,12 @@ def _cdf_sweep(data):
     amplitude = np.asarray(data["nasa_amplitude"], dtype=float)
     frequency = np.asarray(data["freq"], dtype=float).ravel()
     heights = np.asarray(data["v_height"], dtype=float).ravel()
+    if amplitude.ndim != 2:
+        raise ValueError("CDF amplitude must be two-dimensional")
+    if amplitude.shape != (frequency.size, heights.size):
+        raise ValueError(
+            "CDF amplitude shape does not match its frequency and height axes"
+        )
     valid = (
         np.isfinite(frequency) & (frequency > 0.0) & np.isfinite(amplitude).all(axis=1)
     )

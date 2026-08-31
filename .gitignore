@@ -4,16 +4,29 @@ __pycache__/
 .ruff_cache/
 .venv/
 *.egg-info/
+build/
+dist/
+pip-wheel-metadata/
+.coverage*
+.ipynb_checkpoints/
 .DS_Store
 .vscode/
 
 data/*
 !data/raw/
+data/raw/*
 !data/raw/.gitkeep
-!data/raw/*
+!data/raw/README.md
+!data/raw/csa_sample_1972129061031.png
+!data/raw/csa_sample_1972176033200.png
+!data/raw/csa_sample_1973103040746.png
+!data/raw/csa_verified_ksh_1972322002235.png
 !data/external/
+data/external/*
 !data/external/.gitkeep
 !data/samples/
-!data/samples/*
+data/samples/*
+!data/samples/README.md
+!data/samples/*.cdf
 
 outputs/*

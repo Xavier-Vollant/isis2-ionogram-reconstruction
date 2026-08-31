@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Package quality-gated CSA tensors with resampled NASA CDF targets."""
+"""Package quality-gated CSA tensors with resampled NASA targets."""
 
 from __future__ import annotations
 
@@ -15,9 +15,9 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
-from isis_research import ionogram  # noqa: E402
-from isis_research.grids import FREQUENCY, HEIGHT  # noqa: E402
-from isis_research.nasa.cdf import _resample_cdf  # noqa: E402
+from isis_research import ionogram
+from isis_research.grids import FREQUENCY, HEIGHT
+from isis_research.nasa.cdf import _resample_cdf
 
 DEFAULT_FINAL = ROOT / "outputs/calibration/phase7_quality_gate_800/final_routing.csv"
 DEFAULT_PAIRS = ROOT / "outputs/calibration/phase1_pairs_800/manifest.csv"
@@ -31,6 +31,7 @@ def read_csv(path):
 
 
 def main():
+    """Parse CLI options and package selected calibrated pairs."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--final", type=Path, default=DEFAULT_FINAL)
     parser.add_argument("--pairs", type=Path, default=DEFAULT_PAIRS)
@@ -43,11 +44,8 @@ def main():
         default="usable",
         choices=("usable", "review", "not_usable"),
         help=(
-            "which Phase 7 quality band to package. Defaults to usable. "
-            "Packaging 'review' separately is what makes the strict-versus-"
-            "review corpus comparison possible at all - while this filter was "
-            "hardcoded, every packaged corpus was strict by construction and "
-            "the ablation had nothing to compare against."
+            "which quality band to package; defaults to usable. "
+            "Use review to build a separate comparison corpus."
         ),
     )
     args = parser.parse_args()
@@ -56,6 +54,8 @@ def main():
 
     final_rows = [row for row in read_csv(args.final) if row["status"] == args.status]
     pair_rows = {row["pair_name"]: row for row in read_csv(args.pairs)}
+    if not final_rows:
+        raise SystemExit(f"quality gate produced no {args.status} pairs")
     if len(final_rows) < args.min_usable_pairs:
         raise SystemExit(
             f"quality gate produced only {len(final_rows)} {args.status} pairs"
@@ -70,7 +70,10 @@ def main():
     records = []
     failures = []
     for final in final_rows:
-        pair = pair_rows[final["pair_name"]]
+        pair = pair_rows.get(final["pair_name"])
+        if pair is None:
+            failures.append((final["pair_name"], "missing_pair_manifest_row"))
+            continue
         stem = f"{int(final['pair_number']):04d}__{final['pair_name']}"
         graph_value = final.get("selected_warp_graph", "")
         graph_path = Path(graph_value) if graph_value else Path()
@@ -112,8 +115,10 @@ def main():
             failures.append(
                 (
                     final["pair_name"],
-                    f"NASA target coverage {target_valid_fraction:.3f} is below "
-                    f"{args.min_target_valid_fraction:.3f}",
+                    (
+                        f"NASA target coverage {target_valid_fraction:.3f} is below "
+                        f"{args.min_target_valid_fraction:.3f}"
+                    ),
                 )
             )
             csa_link.unlink(missing_ok=True)
@@ -146,6 +151,9 @@ def main():
             }
         )
 
+    if not records:
+        detail = failures[0][1] if failures else "no packageable rows"
+        raise SystemExit(f"could package no {args.status} pairs; first={detail}")
     if failures and len(records) < args.min_usable_pairs:
         raise SystemExit(
             f"could package only {len(records)} pairs; {len(failures)} failed, first={failures[0]}"
@@ -167,16 +175,16 @@ def main():
     (args.out / "README.md").write_text(
         "# Usable CSA/NASA amplitude dataset\n\n"
         f"Packaged {len(records)} quality-gated matched pairs. Every row has a selected "
-        "512x512 Phase 6 CSA warp, its exact NASA CDF, and a NASA amplitude target "
+        "512x512 CSA warp, its exact NASA CDF, and a NASA amplitude target "
         f"resampled to the benchmark grid ({len(HEIGHT)} heights x {len(FREQUENCY)} frequencies) "
         f"with at least {args.min_target_valid_fraction:.0%} valid target coverage.\n\n"
         "- `dataset_index.csv` is the training/evaluation index.\n"
         "- `csa_warped/` and `nasa_cdf/` are symlinks to the existing artifacts.\n"
         "- `nasa_targets/` stores normalized `amplitude`, `valid_mask`, `frequency_mhz`, "
         "and `virtual_height_km` arrays.\n"
-        f"- {len(failures)} quality-gated CSA pair was excluded because its NASA CDF "
-        "could not be resampled safely; see `excluded.csv`.\n"
-        "- Splits are reel-level and preserve the Phase 7 train/held-out assignment.\n"
+        f"- Excluded pairs: {len(failures)}; their NASA CDF could not be resampled "
+        "safely. See `excluded.csv`.\n"
+        "- Splits are reel-level and preserve the quality-gate train/held-out assignment.\n"
         "- The target is NASA's measured `ampl` array; no hand-labeled echo trace is used.\n",
         encoding="utf-8",
     )
