@@ -19,8 +19,8 @@ The example notebooks expect to be opened with the repository root as the
 working directory. Confirm that these paths exist:
 
 ```text
-data/raw/csa_verified_bur_1973077111224.png
-data/samples/i2_av_bur_1973077111224_v01.cdf
+data/raw/csa_verified_bur_1973078095224.png
+data/samples/i2_av_bur_1973078095224_v01.cdf
 configs/film_calibration_profile.json
 configs/model_candidates.json
 ```

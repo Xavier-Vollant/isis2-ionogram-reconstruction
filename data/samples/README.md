@@ -1,7 +1,7 @@
 # NASA CDF samples
 
-`i2_av_bur_1973077111224_v01.cdf` is paired with
-`data/raw/csa_verified_bur_1973077111224.png`. It is the default pair used by
+`i2_av_bur_1973078095224_v01.cdf` is paired with
+`data/raw/csa_verified_bur_1973078095224.png`. It is the default pair used by
 the README and notebook 03 to compare a generated model CDF's structure and
 shared variables with a NASA CDF.
 

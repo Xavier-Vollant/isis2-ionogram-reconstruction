@@ -18,7 +18,7 @@ source .venv/bin/activate
 python -m pip install -e '.[dev,notebooks]'
 
 python scripts/pipeline/run_scan.py \
-  data/raw/csa_verified_bur_1973077111224.png \
+  data/raw/csa_verified_bur_1973078095224.png \
   --output outputs/example \
   --station BUR \
   --diagnostics
@@ -33,7 +33,7 @@ diagnostic images.
 The quick-start example starts with the checked-in scan:
 
 ```text
-data/raw/csa_verified_bur_1973077111224.png
+data/raw/csa_verified_bur_1973078095224.png
 ```
 
 `run_scan.py` processes that image in five stages:
@@ -48,9 +48,9 @@ The output is written to `outputs/example/`:
 
 ```text
 outputs/example/
-├── usable/csa_verified_bur_1973077111224.npz
-├── csa_verified_bur_1973077111224_prediction.npz
-├── csa_verified_bur_1973077111224_model.cdf
+├── usable/csa_verified_bur_1973078095224.npz
+├── csa_verified_bur_1973078095224_prediction.npz
+├── csa_verified_bur_1973078095224_model.cdf
 ├── summary.json
 └── diagnostics/
 ```
@@ -64,15 +64,15 @@ prediction, not a measured NASA observation.
 
 Here is the BUR scan used in the quick-start example at a few points in the
 pipeline. Its matching NASA reference is
-`data/samples/i2_av_bur_1973077111224_v01.cdf`.
+`data/samples/i2_av_bur_1973078095224_v01.cdf`.
 
-This pair was selected after testing 200 candidate pairs with the standardizer
-and the default model. 98 scans were usable; on the comparable CDF results,
-this one had an MAE of 0.0689 and a correlation of 0.8149.
+This is the selected default pair, gallery item #09 from the ranked usable
+comparisons. With the registered default model, it has an MAE of 0.0851 and a
+correlation of 0.7973 against the resampled NASA reference.
 
-![Original scanned BUR ionogram](data/raw/csa_verified_bur_1973077111224.png)
+![Original scanned BUR ionogram](data/raw/csa_verified_bur_1973078095224.png)
 
-*The original CSA scan from 1973-03-18, before calibration.*
+*The original CSA scan from 1973-03-19, before calibration.*
 
 ![Detected structure in the BUR scan](docs/assets/bur-structure-detection.png)
 
@@ -82,11 +82,11 @@ this one had an MAE of 0.0689 and a correlation of 0.8149.
 
 *The calibrated result is shown on frequency and virtual-height axes.*
 
-![NASA reference, model output, and absolute error](docs/assets/bur-model-comparison.png)
+![NASA reference and all three model outputs](docs/assets/bur-model-comparison.png)
 
-*The notebook comparison shows the matching NASA reference beside one model
-output and the absolute error. The model image is an estimate, not a measured
-NASA value.*
+*The comparison shows the matching NASA reference beside all three model
+outputs and the best model's absolute error. Model images are estimates,
+not measured NASA values.*
 
 ## Read next
 
