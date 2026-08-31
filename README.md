@@ -28,6 +28,38 @@ The command writes a calibrated `isis.ionogram.v1` artifact, a model
 prediction, a model-derived CDF-like file, `summary.json`, and optional
 diagnostic images.
 
+## From input to output
+
+The quick-start example starts with the checked-in scan:
+
+```text
+data/raw/csa_verified_bur_1973077231124.png
+```
+
+`run_scan.py` processes that image in five stages:
+
+1. checks the film layout and finds its markers;
+2. fits frequency and virtual-height axes;
+3. warps the scan onto a regular `isis.ionogram.v1` grid;
+4. runs the default image model; and
+5. exports the model prediction as a NASA-CDF-like file.
+
+The output is written to `outputs/example/`:
+
+```text
+outputs/example/
+├── usable/csa_verified_bur_1973077231124.npz
+├── csa_verified_bur_1973077231124_prediction.npz
+├── csa_verified_bur_1973077231124_model.cdf
+├── summary.json
+└── diagnostics/
+```
+
+`summary.json` records the status, axes, output names, and provenance. The
+`diagnostics/` directory contains structure, calibration, warp, and validity
+mask views when `--diagnostics` is used. The amplitude remains a model
+prediction, not a measured NASA observation.
+
 ## Read next
 
 - [Understand the project](docs/OVERVIEW.md)
