@@ -14,7 +14,7 @@ The project can:
 - passed through the checked-in image models; and
 - exported as a model-derived NASA-CDF-like amplitude file.
 
-The verified KSH example completes this path as `usable`. Calibration is
+The verified BUR example completes this path as `usable`. Calibration is
 deterministic for a given scan and profile. The amplitude stage uses a
 checked-in image-model checkpoint.
 

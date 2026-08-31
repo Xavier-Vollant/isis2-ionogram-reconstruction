@@ -19,8 +19,8 @@ The example notebooks expect to be opened with the repository root as the
 working directory. Confirm that these paths exist:
 
 ```text
-data/raw/csa_verified_ksh_1972322002235.png
-data/samples/i2_av_ksh_1972322002235_v01.cdf
+data/raw/csa_verified_bur_1973077231124.png
+data/samples/i2_av_bur_1973077231124_v01.cdf
 configs/film_calibration_profile.json
 configs/model_candidates.json
 ```
@@ -35,7 +35,7 @@ static images; inspect those images or use an inline Jupyter backend.
 
 That status is part of the result. Run the command again with `--diagnostics`
 and inspect the structure overlay, calibrated axes, warped image, and validity
-mask. Use the verified KSH example as a fresh-installation check.
+mask. Use the verified BUR example as a fresh-installation check.
 
 ## The prediction does not look like the NASA amplitude
 

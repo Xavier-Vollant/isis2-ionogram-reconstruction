@@ -18,8 +18,8 @@ Run them in this order:
 
 The notebooks use the checked-in matched pair by default:
 
-- CSA: `data/raw/csa_verified_ksh_1972322002235.png`
-- NASA reference: `data/samples/i2_av_ksh_1972322002235_v01.cdf`
+- CSA: `data/raw/csa_verified_bur_1973077231124.png`
+- NASA reference: `data/samples/i2_av_bur_1973077231124_v01.cdf`
 
 Notebook 03 compares structure and shared variables, then resamples the NASA
 amplitude grid onto each model grid. It shows NASA, model, and absolute-error

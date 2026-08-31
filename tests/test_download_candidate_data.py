@@ -50,7 +50,7 @@ def test_process_downloads_validates_and_writes_review_fields(tmp_path, monkeypa
 
     sample_png = (
         Path(__file__).resolve().parents[1]
-        / "data/raw/csa_verified_ksh_1972322002235.png"
+        / "data/raw/csa_verified_bur_1973077231124.png"
     ).read_bytes()
     monkeypatch.setattr(
         downloader,

@@ -18,9 +18,9 @@ source .venv/bin/activate
 python -m pip install -e '.[dev,notebooks]'
 
 python scripts/pipeline/run_scan.py \
-  data/raw/csa_verified_ksh_1972322002235.png \
+  data/raw/csa_verified_bur_1973077231124.png \
   --output outputs/example \
-  --station KSH \
+  --station BUR \
   --diagnostics
 ```
 
@@ -39,6 +39,7 @@ diagnostic images.
 - [Read the file contracts](docs/product_contract.md)
 - [Troubleshoot a run](docs/TROUBLESHOOTING.md)
 - [Read the research status](PROJECT_HANDOFF.md)
+- [See what changed](CHANGELOG.md)
 - [Acknowledgments](ACKNOWLEDGMENTS.md)
 
 ## What is included

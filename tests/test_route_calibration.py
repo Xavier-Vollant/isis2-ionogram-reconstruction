@@ -80,7 +80,7 @@ def test_known_sweep_uses_the_exact_supported_profile():
 def test_cdf_validation_accepts_checked_in_sample():
     path = (
         Path(__file__).resolve().parents[1]
-        / "data/samples/i2_av_ksh_1972322002235_v01.cdf"
+        / "data/samples/i2_av_bur_1973077231124_v01.cdf"
     )
     assert cdf_validation_error(path) is None
 
@@ -112,7 +112,7 @@ def test_route_scan_falls_back_when_referenced_cdf_is_malformed(tmp_path):
     malformed.write_bytes(b"not a cdf")
     film = (
         Path(__file__).resolve().parents[1]
-        / "data/raw/csa_verified_ksh_1972322002235.png"
+        / "data/raw/csa_verified_bur_1973077231124.png"
     )
     profile = (
         Path(__file__).resolve().parents[1] / "configs/film_calibration_profile.json"
