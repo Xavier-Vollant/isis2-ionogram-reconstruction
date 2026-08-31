@@ -66,10 +66,6 @@ Here is the BUR scan used in the quick-start example at a few points in the
 pipeline. Its matching NASA reference is
 `data/samples/i2_av_bur_1973078095224_v01.cdf`.
 
-This is the selected default pair, gallery item #09 from the ranked usable
-comparisons. With the registered default model, it has an MAE of 0.0851 and a
-correlation of 0.7973 against the resampled NASA reference.
-
 ![Original scanned BUR ionogram](data/raw/csa_verified_bur_1973078095224.png)
 
 *The original CSA scan from 1973-03-19, before calibration.*
