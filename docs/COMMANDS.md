@@ -37,7 +37,7 @@ model, and exports a model-derived CDF-like file.
 
 ~~~sh
 python scripts/pipeline/run_scan.py \
-  data/raw/csa_verified_bur_1973077231124.png \
+  data/raw/csa_verified_bur_1973077111224.png \
   --output outputs/example \
   --station BUR \
   --diagnostics
@@ -214,8 +214,8 @@ one NASA CDF.
 
 ~~~sh
 python scripts/dataset/align_landmarks.py \
-  --film data/raw/csa_verified_bur_1973077231124.png \
-  --cdf data/samples/i2_av_bur_1973077231124_v01.cdf \
+  --film data/raw/csa_verified_bur_1973077111224.png \
+  --cdf data/samples/i2_av_bur_1973077111224_v01.cdf \
   --out /tmp/final-isis-landmarks.png \
   --fast
 ~~~
@@ -326,7 +326,7 @@ useful for debugging or for building a batch manually.
 
 ~~~sh
 python scripts/pipeline/route_calibration.py \
-  --film data/raw/csa_verified_bur_1973077231124.png \
+  --film data/raw/csa_verified_bur_1973077111224.png \
   --profile configs/film_calibration_profile.json \
   --out /tmp/final-isis-route.json
 ~~~
@@ -338,7 +338,7 @@ data is available. This command chooses a route; it does not warp the image.
 
 ~~~sh
 python scripts/pipeline/extract_scan_structure.py \
-  --film data/raw/csa_verified_bur_1973077231124.png \
+  --film data/raw/csa_verified_bur_1973077111224.png \
   --out-dir /tmp/final-isis-structure \
   --no-plots
 ~~~
@@ -353,7 +353,7 @@ Single-pair example:
 ~~~sh
 python scripts/pipeline/fit_frequency_axis.py \
   --structure /tmp/final-isis-structure/structure.json \
-  --cdf data/samples/i2_av_bur_1973077231124_v01.cdf \
+  --cdf data/samples/i2_av_bur_1973077111224_v01.cdf \
   --out /tmp/final-isis-frequency.json
 ~~~
 
@@ -395,7 +395,7 @@ Purpose: create the native 512x512 film-only corpus used for model training.
 
 ~~~sh
 python scripts/pipeline/standardize_film_only_512.py \
-  --film data/raw/csa_verified_bur_1973077231124.png \
+  --film data/raw/csa_verified_bur_1973077111224.png \
   --output outputs/film_only_512
 ~~~
 
@@ -420,7 +420,7 @@ checkpoint, or --uncalibrated to skip contrast calibration.
 python scripts/pipeline/export_model_as_cdf.py \
   outputs/example/prediction.npz \
   --csa outputs/notebooks/01_scan.npz \
-  --pair-name i2_av_bur_1973077231124_v01 \
+  --pair-name i2_av_bur_1973077111224_v01 \
   --station BUR \
   --output outputs/example/model.cdf \
   --scale unit
@@ -433,7 +433,7 @@ amplitude is a model prediction, not a measured NASA observation.
 
 ~~~sh
 python scripts/pipeline/run_scan.py \
-  data/raw/csa_verified_bur_1973077231124.png \
+  data/raw/csa_verified_bur_1973077111224.png \
   --output outputs/example \
   --model norm_residual_unet \
   --station BUR \
@@ -714,7 +714,7 @@ writable cache directory when launching commands:
 
 ~~~sh
 MPLCONFIGDIR=/tmp/final-isis-mpl python scripts/pipeline/run_scan.py \
-  data/raw/csa_verified_bur_1973077231124.png \
+  data/raw/csa_verified_bur_1973077111224.png \
   --output outputs/example
 ~~~
 

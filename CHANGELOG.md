@@ -10,6 +10,8 @@ mean.
   notebooks, output descriptions, and limitations.
 - Replaced the old KSH quick-start example with a stronger BUR example, along
   with its matching sample CDF and an explanation of how it was selected.
+- Renamed the README heading to match the repository and replaced the BUR
+  example with a new scan/CDF pair selected from a 200-case check.
 - Added guides for the pipeline, commands, data preparation, file contracts,
   notebooks, and common problems.
 - Documented the three included inference checkpoints and the training,

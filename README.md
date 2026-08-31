@@ -1,4 +1,4 @@
-# FINAL ISIS
+# ISIS-2 Ionogram Reconstruction
 
 Convert a scanned Canadian Space Agency (CSA) ISIS-2 ionogram into a
 calibrated digital ionogram. The included image models can then estimate an
@@ -18,7 +18,7 @@ source .venv/bin/activate
 python -m pip install -e '.[dev,notebooks]'
 
 python scripts/pipeline/run_scan.py \
-  data/raw/csa_verified_bur_1973077231124.png \
+  data/raw/csa_verified_bur_1973077111224.png \
   --output outputs/example \
   --station BUR \
   --diagnostics
@@ -33,7 +33,7 @@ diagnostic images.
 The quick-start example starts with the checked-in scan:
 
 ```text
-data/raw/csa_verified_bur_1973077231124.png
+data/raw/csa_verified_bur_1973077111224.png
 ```
 
 `run_scan.py` processes that image in five stages:
@@ -48,9 +48,9 @@ The output is written to `outputs/example/`:
 
 ```text
 outputs/example/
-├── usable/csa_verified_bur_1973077231124.npz
-├── csa_verified_bur_1973077231124_prediction.npz
-├── csa_verified_bur_1973077231124_model.cdf
+├── usable/csa_verified_bur_1973077111224.npz
+├── csa_verified_bur_1973077111224_prediction.npz
+├── csa_verified_bur_1973077111224_model.cdf
 ├── summary.json
 └── diagnostics/
 ```
@@ -63,11 +63,16 @@ prediction, not a measured NASA observation.
 ## Visual example
 
 Here is the BUR scan used in the quick-start example at a few points in the
-pipeline.
+pipeline. Its matching NASA reference is
+`data/samples/i2_av_bur_1973077111224_v01.cdf`.
 
-![Original scanned BUR ionogram](data/raw/csa_verified_bur_1973077231124.png)
+This pair was selected after testing 200 candidate pairs with the standardizer
+and the default model. 98 scans were usable; on the comparable CDF results,
+this one had an MAE of 0.0689 and a correlation of 0.8149.
 
-*The original CSA scan, before calibration.*
+![Original scanned BUR ionogram](data/raw/csa_verified_bur_1973077111224.png)
+
+*The original CSA scan from 1973-03-18, before calibration.*
 
 ![Detected structure in the BUR scan](docs/assets/bur-structure-detection.png)
 
@@ -79,8 +84,9 @@ pipeline.
 
 ![NASA reference, model output, and absolute error](docs/assets/bur-model-comparison.png)
 
-*The notebook comparison shows a NASA reference beside one model output and
-the absolute error. The model image is an estimate, not a measured NASA value.*
+*The notebook comparison shows the matching NASA reference beside one model
+output and the absolute error. The model image is an estimate, not a measured
+NASA value.*
 
 ## Read next
 

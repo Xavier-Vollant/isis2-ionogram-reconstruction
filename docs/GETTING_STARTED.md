@@ -20,7 +20,7 @@ The repository includes a CSA scan that passes the current quality gate:
 
 ```sh
 python scripts/pipeline/run_scan.py \
-  data/raw/csa_verified_bur_1973077231124.png \
+  data/raw/csa_verified_bur_1973077111224.png \
   --output outputs/example \
   --station BUR \
   --diagnostics

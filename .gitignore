@@ -21,6 +21,7 @@ data/raw/*
 !data/raw/csa_sample_1972176033200.png
 !data/raw/csa_sample_1973103040746.png
 !data/raw/csa_verified_bur_1973077231124.png
+!data/raw/csa_verified_bur_1973077111224.png
 !data/external/
 data/external/*
 !data/external/.gitkeep

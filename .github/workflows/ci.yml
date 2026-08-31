@@ -57,7 +57,7 @@ jobs:
           MPLCONFIGDIR: ${{ runner.temp }}/final-isis-mpl
         run: |
           python scripts/pipeline/run_scan.py \
-            data/raw/csa_verified_bur_1973077231124.png \
+            data/raw/csa_verified_bur_1973077111224.png \
             --output "$RUNNER_TEMP/final-isis-smoke" \
             --station BUR \
             --diagnostics
