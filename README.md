@@ -73,7 +73,7 @@ pipeline.
 
 *The structure pass finds the film area, frequency markers, and ruling lines.*
 
-![Calibrated BUR ionogram](docs/assets/bur-calibration.png)
+![Calibrated BUR ionogram](docs/assets/bur-calibrated-ionogram.png)
 
 *The calibrated result is shown on frequency and virtual-height axes.*
 
